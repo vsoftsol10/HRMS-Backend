@@ -16,7 +16,7 @@ const app = express();
 // CORS Configuration - Updated to include your frontend origins
 const corsOptions = {
   origin: [
-    'https://your-actual-vercel-app-name.vercel.app', // Replace with your actual Vercel URL
+    'https://hrms-three-tau.vercel.app', // Replace with your actual Vercel URL
     'http://localhost:3000',
     'http://localhost:5173',  // Your current dev server
     'http://localhost:3001',

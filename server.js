@@ -18,6 +18,7 @@ const corsOptions = {
   origin: [
     'https://hrms-backend-production-abd6.up.railway.app', // Replace with your actual Vercel URL
     'http://localhost:3000',
+    'https://portal.thevsoft.com',
     'http://localhost:5173',  // Your current dev server
     'https://hrmsfront.vercel.app',
     'https://localhost:5173',

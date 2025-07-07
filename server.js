@@ -2480,10 +2480,7 @@ app.delete("/api/courses/:id", async (req, res) => {
   }
 });
 
-// Add the server startup
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on port ${PORT}`);
-});
+
 
 /**************************************/
 

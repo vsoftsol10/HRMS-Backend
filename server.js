@@ -2488,7 +2488,7 @@ app.delete("/api/courses/:id", async (req, res) => {
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: process.env.FRONTEND_URL || "https://portal.thevsoft.com/",
     credentials: true,
   })
 );
@@ -2643,7 +2643,7 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
 
     // ✅ Send verification email
     const verificationLink = `${
-      process.env.FRONTEND_URL || "http://localhost:5173"
+      process.env.FRONTEND_URL || "https://portal.thevsoft.com/"
     }/verify-email?token=${verificationToken}`;
     const emailSent = await sendEmail(
       email,
@@ -2798,7 +2798,7 @@ app.post(
 
         // Send reset email
         const resetLink = `${
-          process.env.FRONTEND_URL || "http://localhost:3000"
+          process.env.FRONTEND_URL || "https://portal.thevsoft.com/"
         }/reset-password?token=${resetToken}`;
         await sendEmail(
           email,
@@ -2987,7 +2987,7 @@ app.post(
 
       // Send verification email
       const verificationLink = `${
-        process.env.FRONTEND_URL || "http://localhost:3000"
+        process.env.FRONTEND_URL || "https://portal.thevsoft.com/"
       }/verify-email?token=${verificationToken}`;
       await sendEmail(
         email,

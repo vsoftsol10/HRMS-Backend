@@ -56,10 +56,26 @@ const dbConfig = {
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   port: process.env.DB_PORT,
+  waitForConnections: true,
+  connectionLimit: 10,
 };
 
 // Create MySQL connection pool
 const pool = mysql.createPool(dbConfig);
+
+// Database connection middleware
+app.use(async (req, res, next) => {
+  try {
+    req.db = pool;
+    next();
+  } catch (error) {
+    console.error('Database connection error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database connection failed'
+    });
+  }
+});
 
 // Updated error handling middleware
 app.use((err, req, res, next) => {
@@ -2082,10 +2098,9 @@ app.get(
   }
 );
 
-// GET all courses with their platforms, topics, and features
 app.get("/api/courses", async (req, res) => {
   try {
-    const connection = req.db; // Assuming you have database connection middleware
+    const connection = req.db;
 
     // Get all active courses
     const coursesQuery = `
@@ -2234,8 +2249,8 @@ app.post("/api/courses", async (req, res) => {
       topics,
       features,
     } = req.body;
-    const connection = req.db;
 
+    const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
@@ -2303,6 +2318,7 @@ app.post("/api/courses", async (req, res) => {
       }
 
       await connection.commit();
+      connection.release();
 
       res.status(201).json({
         success: true,
@@ -2311,6 +2327,7 @@ app.post("/api/courses", async (req, res) => {
       });
     } catch (error) {
       await connection.rollback();
+      connection.release();
       throw error;
     }
   } catch (error) {
@@ -2324,7 +2341,7 @@ app.post("/api/courses", async (req, res) => {
 });
 
 // PUT update course
-app.put("/:id", async (req, res) => {
+app.put("/api/courses/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -2338,8 +2355,8 @@ app.put("/:id", async (req, res) => {
       topics,
       features,
     } = req.body;
-    const connection = req.db;
 
+    const connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
@@ -2407,6 +2424,7 @@ app.put("/:id", async (req, res) => {
       }
 
       await connection.commit();
+      connection.release();
 
       res.json({
         success: true,
@@ -2414,6 +2432,7 @@ app.put("/:id", async (req, res) => {
       });
     } catch (error) {
       await connection.rollback();
+      connection.release();
       throw error;
     }
   } catch (error) {
@@ -2427,7 +2446,7 @@ app.put("/:id", async (req, res) => {
 });
 
 // DELETE course (soft delete)
-app.delete("/:id", async (req, res) => {
+app.delete("/api/courses/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const connection = req.db;
@@ -2459,6 +2478,11 @@ app.delete("/:id", async (req, res) => {
       error: error.message,
     });
   }
+});
+
+// Add the server startup
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running on port ${PORT}`);
 });
 
 /**************************************/

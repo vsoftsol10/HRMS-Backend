@@ -43,7 +43,7 @@ app.use(cors(corsOptions));
 // Handle preflight requests explicitly
 app.options('*', cors(corsOptions));
 
-app.get('/cors-test', (req, res) => {
+app.get('/api/cors-test', (req, res) => {
   res.json({ message: 'CORS is working' });
 });
 

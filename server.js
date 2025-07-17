@@ -1,31 +1,33 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql2/promise");
+const helmet = require("helmet");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
-const helmet = require("helmet");
 const { body, validationResult } = require("express-validator");
-const PORT = process.env.PORT || 8080;
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const db = require('./src/config/database'); // PostgreSQL connection
 
+const PORT = process.env.PORT || 8080;
 const app = express();
 
-// CORS Configuration - Updated to include your frontend origins
+// CORS Configuration
 const corsOptions = {
   origin: [
-    'https://hrms-backend-production-abd6.up.railway.app', // Replace with your actual Vercel URL
+    'https://hrms-backend-production-abd6.up.railway.app',
     'http://localhost:3000',
     'https://portal.thevsoft.com',
-    'http://localhost:5173',  // Your current dev server
+    'http://localhost:5173',
     'https://hrmsfront.vercel.app',
     'https://localhost:5173',
-    // Add any other domains you need
   ],
   credentials: true,
- methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Origin',
     'X-Requested-With',
@@ -38,46 +40,25 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+// Apply Middleware
 app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
-
-app.get('/api/cors-test', (req, res) => {
-  res.json({ message: 'CORS is working' });
-});
-
+app.options('*', cors(corsOptions)); // Preflight
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+app.use(helmet());
 
-// MySQL Database Configuration
-const dbConfig = {
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-  port: process.env.DB_PORT,
-  waitForConnections: true,
-  connectionLimit: 10,
-};
-
-// Create MySQL connection pool
-const pool = mysql.createPool(dbConfig);
-
-// Database connection middleware
-app.use(async (req, res, next) => {
+// PostgreSQL Test Route
+app.get('/api/test-db', async (req, res) => {
   try {
-    req.db = pool;
-    next();
-  } catch (error) {
-    console.error('Database connection error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Database connection failed'
-    });
+    const result = await db.query('SELECT NOW()');
+    res.json({ message: '✅ PostgreSQL connected', time: result.rows[0].now });
+  } catch (err) {
+    console.error('❌ PostgreSQL query error:', err.message);
+    res.status(500).json({ error: 'DB Query Failed' });
   }
 });
 
-// Updated error handling middleware
+// Global Error Handler (CORS-specific)
 app.use((err, req, res, next) => {
   if (err.message === "Not allowed by CORS") {
     return res.status(403).json({
@@ -88,51 +69,41 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// Test database connection
-async function testConnection() {
-  try {
-    const connection = await pool.getConnection();
-    console.log("✅ Connected to MySQL database successfully!");
-    connection.release();
-  } catch (error) {
-    console.error("❌ Error connecting to MySQL database:", error.message);
-  }
-}
 
-// Initialize database connection
-testConnection();
+
 
 // Create payrolls table if it doesn't exist
 async function initializeDatabase() {
   try {
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS payrolls (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        pay_period_start DATE NOT NULL,
-        pay_period_end DATE NOT NULL,
-        pay_date DATE NOT NULL,
-        company_name VARCHAR(255) NOT NULL,
-        company_address TEXT,
-        company_phone VARCHAR(20),
-        company_email VARCHAR(255),
-        employee_name VARCHAR(255) NOT NULL,
-        employee_id VARCHAR(50) NOT NULL UNIQUE,
-        position VARCHAR(255),
-        department VARCHAR(255),
-        employee_email VARCHAR(255),
-        basic_salary DECIMAL(10,2) DEFAULT 0,
-        overtime DECIMAL(10,2) DEFAULT 0,
-        bonus DECIMAL(10,2) DEFAULT 0,
-        allowances DECIMAL(10,2) DEFAULT 0,
-        leave_deduction DECIMAL(10,2) DEFAULT 0,
-        lop_deduction DECIMAL(10,2) DEFAULT 0,
-        late_deduction DECIMAL(10,2) DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
+    id SERIAL PRIMARY KEY,
+    pay_period_start DATE NOT NULL,
+    pay_period_end DATE NOT NULL,
+    pay_date DATE NOT NULL,
+    company_name VARCHAR(255) NOT NULL,
+    company_address TEXT,
+    company_phone VARCHAR(20),
+    company_email VARCHAR(255),
+    employee_name VARCHAR(255) NOT NULL,
+    employee_id VARCHAR(50) NOT NULL UNIQUE,
+    position VARCHAR(255),
+    department VARCHAR(255),
+    employee_email VARCHAR(255),
+    basic_salary DECIMAL(10,2) DEFAULT 0,
+    overtime DECIMAL(10,2) DEFAULT 0,
+    bonus DECIMAL(10,2) DEFAULT 0,
+    allowances DECIMAL(10,2) DEFAULT 0,
+    leave_deduction DECIMAL(10,2) DEFAULT 0,
+    lop_deduction DECIMAL(10,2) DEFAULT 0,
+    late_deduction DECIMAL(10,2) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+
     `;
 
-    await pool.execute(createTableQuery);
+    await db.query(createTableQuery);
     console.log("✅ Payrolls table created/verified successfully!");
   } catch (error) {
     console.error("❌ Error creating table:", error.message);
@@ -196,7 +167,7 @@ app.get("/api", (req, res) => {
 // GET API - Fetch all payrolls
 app.get("/api/payroll", async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const [rows] = await db.query(
       "SELECT * FROM payrolls ORDER BY created_at DESC"
     );
 
@@ -247,7 +218,7 @@ app.get("/api/payroll", async (req, res) => {
 app.get("/api/payroll/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const [rows] = await pool.execute("SELECT * FROM payrolls WHERE id = ?", [
+    const [rows] = await db.query("SELECT * FROM payrolls WHERE id = ?", [
       id,
     ]);
 
@@ -335,10 +306,10 @@ app.post("/api/payroll", async (req, res) => {
       deductions.Late_Deduction,
     ];
 
-    const [result] = await pool.execute(insertQuery, values);
+    const [result] = await db.query(insertQuery, values);
 
     // Fetch the created payroll to return
-    const [newPayroll] = await pool.execute(
+    const [newPayroll] = await db.query(
       "SELECT * FROM payrolls WHERE id = ?",
       [result.insertId]
     );
@@ -399,14 +370,14 @@ app.put("/api/payroll/:id", async (req, res) => {
       id,
     ];
 
-    const [result] = await pool.execute(updateQuery, values);
+    const [result] = await db.query(updateQuery, values);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Payroll not found" });
     }
 
     // Fetch updated payroll
-    const [updatedPayroll] = await pool.execute(
+    const [updatedPayroll] = await db.query(
       "SELECT * FROM payrolls WHERE id = ?",
       [id]
     );
@@ -428,7 +399,7 @@ app.delete("/api/payroll/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
-    const [result] = await pool.execute("DELETE FROM payrolls WHERE id = ?", [
+    const [result] = await db.query("DELETE FROM payrolls WHERE id = ?", [
       id,
     ]);
 
@@ -447,7 +418,7 @@ app.delete("/api/payroll/:id", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running on http://localhost:${PORT}`);
-  console.log(`📊 Make sure your MySQL database is running!`);
+  console.log(`📊 Make sure your PostgreSQL database is running!`);
 });
 
 //Authentication
@@ -468,7 +439,7 @@ app.post("/api/authenticate", async (req, res) => {
     // Query to find employee by employee_id (employee code)
     console.log("Authenticating:", employeeCode, password);
 
-    const [rows] = await pool.execute(
+    const [rows] = await db.query(
       "SELECT * FROM payrolls WHERE employee_id = ? LIMIT 1",
       [employeeCode]
     );
@@ -537,7 +508,7 @@ app.get("/api/employee/:employeeId/dashboard", async (req, res) => {
     const employeeId = req.params.employeeId;
 
     // Get employee's payroll records
-    const [payrollRows] = await pool.execute(
+    const [payrollRows] = await db.query(
       "SELECT * FROM payrolls WHERE employee_id = ? ORDER BY created_at DESC",
       [employeeId]
     );
@@ -619,7 +590,7 @@ app.get("/api/employees", async (req, res) => {
       ORDER BY e.created_at DESC
     `;
 
-    const [rows] = await pool.execute(query);
+    const [rows] = await db.query(query);
 
     const employees = rows.map((row) => ({
       id: row.id,
@@ -692,7 +663,7 @@ app.get("/api/employees/:id", async (req, res) => {
       WHERE e.id = ?
     `;
 
-    const [rows] = await pool.execute(query, [id]);
+    const [rows] = await db.query(query, [id]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -833,7 +804,7 @@ app.post("/api/employees", async (req, res) => {
       notes,
     ];
 
-    const [result] = await pool.execute(insertQuery, values);
+    const [result] = await db.query(insertQuery, values);
 
     res.status(201).json({
       message: "Employee created successfully",
@@ -901,7 +872,7 @@ app.put("/api/employees/:id", async (req, res) => {
 
     // Add validation before the update
     if (departmentId) {
-      const [deptCheck] = await pool.execute(
+      const [deptCheck] = await db.query(
         "SELECT id FROM departments WHERE id = ?",
         [departmentId]
       );
@@ -911,7 +882,7 @@ app.put("/api/employees/:id", async (req, res) => {
     }
 
     if (positionId) {
-      const [posCheck] = await pool.execute(
+      const [posCheck] = await db.query(
         "SELECT id FROM positions WHERE id = ?",
         [positionId]
       );
@@ -969,7 +940,7 @@ app.put("/api/employees/:id", async (req, res) => {
 
     console.log("Update values:", values); // Debug log
 
-    const [result] = await pool.execute(updateQuery, values);
+    const [result] = await db.query(updateQuery, values);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -991,7 +962,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
-    const [result] = await pool.execute("DELETE FROM employees WHERE id = ?", [
+    const [result] = await db.query("DELETE FROM employees WHERE id = ?", [
       id,
     ]);
 
@@ -1011,7 +982,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 // GET API - Fetch departments for dropdown
 app.get("/api/departments", async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const [rows] = await db.query(
       "SELECT id, name FROM departments ORDER BY name"
     );
     res.json(rows);
@@ -1026,7 +997,7 @@ app.get("/api/departments", async (req, res) => {
 // GET API - Fetch positions for dropdown
 app.get("/api/positions", async (req, res) => {
   try {
-    const [rows] = await pool.execute(
+    const [rows] = await db.query(
       "SELECT id, title FROM positions ORDER BY title"
     );
     res.json(rows);
@@ -1047,7 +1018,7 @@ app.get("/api/managers", async (req, res) => {
       WHERE status = 'active' 
       ORDER BY first_name, last_name
     `;
-    const [rows] = await pool.execute(query);
+    const [rows] = await db.query(query);
     res.json(rows);
   } catch (error) {
     console.error("Error fetching managers:", error);
@@ -1077,7 +1048,7 @@ app.get("/api/profile/:employeeCode", async (req, res) => {
       WHERE e.employee_code = ? AND e.status != 'terminated'
     `;
 
-    const [rows] = await pool.execute(query, [employeeCode]);
+    const [rows] = await db.query(query, [employeeCode]);
 
     if (rows.length === 0) {
       return res.status(404).json({ message: "Employee profile not found" });
@@ -1210,7 +1181,7 @@ app.put("/api/profile/:employeeCode", async (req, res) => {
       employeeCode,
     ];
 
-    const [result] = await pool.execute(updateQuery, values);
+    const [result] = await db.query(updateQuery, values);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -1267,32 +1238,44 @@ function calculateTotalHours(
 async function initializeAttendanceTable() {
   try {
     const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS attendance (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        employee_id VARCHAR(50) NOT NULL,
-        date DATE NOT NULL,
-        clock_in TIME,
-        clock_out TIME,
-        break_start TIME,
-        break_end TIME,
-        total_hours DECIMAL(4,2) DEFAULT 0,
-        break_hours DECIMAL(4,2) DEFAULT 0,
-        overtime_hours DECIMAL(4,2) DEFAULT 0,
-        late_minutes INT DEFAULT 0,
-        early_leaving_minutes INT DEFAULT 0,
-        status ENUM('present', 'absent', 'late', 'half-day', 'sick', 'leave') DEFAULT 'present',
-        work_from_home BOOLEAN DEFAULT FALSE,
-        location VARCHAR(255),
-        notes TEXT,
-        is_approved BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_employee_date (employee_id, date),
-        INDEX idx_employee_date (employee_id, date)
-      )
+     -- First, create the ENUM type for status
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_status') THEN
+    CREATE TYPE attendance_status AS ENUM ('present', 'absent', 'late', 'half-day', 'sick', 'leave');
+  END IF;
+END$$;
+
+-- Now create the table
+CREATE TABLE IF NOT EXISTS attendance (
+  id SERIAL PRIMARY KEY,
+  employee_id VARCHAR(50) NOT NULL,
+  date DATE NOT NULL,
+  clock_in TIME,
+  clock_out TIME,
+  break_start TIME,
+  break_end TIME,
+  total_hours DECIMAL(4,2) DEFAULT 0,
+  break_hours DECIMAL(4,2) DEFAULT 0,
+  overtime_hours DECIMAL(4,2) DEFAULT 0,
+  late_minutes INT DEFAULT 0,
+  early_leaving_minutes INT DEFAULT 0,
+  status attendance_status DEFAULT 'present',
+  work_from_home BOOLEAN DEFAULT FALSE,
+  location VARCHAR(255),
+  notes TEXT,
+  is_approved BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT unique_employee_date UNIQUE (employee_id, date)
+);
+
+-- Add index separately (PostgreSQL style)
+CREATE INDEX IF NOT EXISTS idx_employee_date ON attendance (employee_id, date);
+
     `;
 
-    await pool.execute(createTableQuery);
+    await db.query(createTableQuery);
     console.log("✅ Attendance table created/verified successfully!");
   } catch (error) {
     console.error("❌ Error creating attendance table:", error.message);
@@ -1334,7 +1317,7 @@ app.get("/api/attendance/:employeeId/:year/:month", async (req, res) => {
       ORDER BY date
     `;
 
-    const [rows] = await pool.execute(query, [employeeId, year, month]);
+    const [rows] = await db.query(query, [employeeId, year, month]);
 
     // Convert rows to object with date as key
     const attendanceData = {};
@@ -1422,7 +1405,7 @@ app.post("/api/attendance", async (req, res) => {
         updated_at = CURRENT_TIMESTAMP
     `;
 
-    const [result] = await pool.execute(query, [
+    const [result] = await db.query(query, [
       employeeId,
       date,
       clockIn,
@@ -1500,7 +1483,7 @@ app.put("/api/attendance/:id", async (req, res) => {
       WHERE id = ?
     `;
 
-    const [result] = await pool.execute(query, [
+    const [result] = await db.query(query, [
       clockIn,
       clockOut,
       breakStart,
@@ -1542,7 +1525,7 @@ app.delete("/api/attendance/:id", async (req, res) => {
     const { id } = req.params;
 
     const query = "DELETE FROM attendance WHERE id = ?";
-    const [result] = await pool.execute(query, [id]);
+    const [result] = await db.query(query, [id]);
 
     if (result.affectedRows === 0) {
       return res.status(404).json({
@@ -1588,7 +1571,7 @@ app.get(
         AND status IN ('present', 'late', 'half-day')
     `;
 
-      const [rows] = await pool.execute(query, [employeeId, year, month]);
+      const [rows] = await db.query(query, [employeeId, year, month]);
       const summary = rows[0];
 
       res.json({
@@ -1628,7 +1611,7 @@ app.get("/api/attendance/employees", async (req, res) => {
       WHERE status = 'active'
       ORDER BY first_name, last_name
     `;
-    const [rows] = await pool.execute(query);
+    const [rows] = await db.query(query);
 
     res.json({
       success: true,
@@ -1653,16 +1636,17 @@ async function initializeGeofencingTables() {
     // Work locations table
     const createLocationsTable = `
       CREATE TABLE IF NOT EXISTS work_locations (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        address TEXT,
-        latitude DECIMAL(10, 8) NOT NULL,
-        longitude DECIMAL(11, 8) NOT NULL,
-        radius_meters INT DEFAULT 100,
-        is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  address TEXT,
+  latitude DECIMAL(10, 8) NOT NULL,
+  longitude DECIMAL(11, 8) NOT NULL,
+  radius_meters INT DEFAULT 100,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
     `;
 
     // Update attendance table to include location data
@@ -1677,13 +1661,13 @@ async function initializeGeofencingTables() {
       ADD FOREIGN KEY IF NOT EXISTS (work_location_id) REFERENCES work_locations(id)
     `;
 
-    await pool.execute(createLocationsTable);
+    await db.query(createLocationsTable);
     console.log("✅ Work locations table created successfully!");
 
     // Note: ALTER TABLE with IF NOT EXISTS might not work in all MySQL versions
     // You might need to check if columns exist first
     try {
-      await pool.execute(alterAttendanceTable);
+      await db.query(alterAttendanceTable);
       console.log("✅ Attendance table updated with location fields!");
     } catch (error) {
       if (!error.message.includes("Duplicate column")) {
@@ -1699,7 +1683,7 @@ async function initializeGeofencingTables() {
         ('Branch Office', '456 Corporate Ave, City', 40.7589, -73.9851, 150)
     `;
 
-    await pool.execute(insertDefaultLocation);
+    await db.query(insertDefaultLocation);
     console.log("✅ Default work locations inserted!");
   } catch (error) {
     console.error("❌ Error initializing geofencing tables:", error.message);
@@ -1734,7 +1718,7 @@ async function checkGeofence(latitude, longitude) {
       WHERE is_active = TRUE
     `;
 
-    const [locations] = await pool.execute(query);
+    const [locations] = await db.query(query);
 
     for (const location of locations) {
       const distance = calculateDistance(
@@ -1793,7 +1777,7 @@ app.get("/api/work-locations", async (req, res) => {
       ORDER BY name
     `;
 
-    const [rows] = await pool.execute(query);
+    const [rows] = await db.query(query);
 
     res.json({
       success: true,
@@ -1826,7 +1810,7 @@ app.post("/api/work-locations", async (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `;
 
-    const [result] = await pool.execute(query, [
+    const [result] = await db.query(query, [
       name,
       address,
       latitude,
@@ -1988,7 +1972,7 @@ app.post("/api/attendance-with-location", async (req, res) => {
         updated_at = CURRENT_TIMESTAMP
     `;
 
-    const [result] = await pool.execute(query, [
+    const [result] = await db.query(query, [
       employeeId,
       date,
       clockIn,
@@ -2049,7 +2033,7 @@ app.get(
       ORDER BY a.date
     `;
 
-      const [rows] = await pool.execute(query, [employeeId, year, month]);
+      const [rows] = await db.query(query, [employeeId, year, month]);
 
       // Convert rows to object with date as key
       const attendanceData = {};
@@ -2250,7 +2234,7 @@ app.post("/api/courses", async (req, res) => {
       features,
     } = req.body;
 
-    const connection = await pool.getConnection();
+    const connection = await db.getConnection();
     await connection.beginTransaction();
 
     try {
@@ -2356,7 +2340,7 @@ app.put("/api/courses/:id", async (req, res) => {
       features,
     } = req.body;
 
-    const connection = await pool.getConnection();
+    const connection = await db.getConnection();
     await connection.beginTransaction();
 
     try {
@@ -2617,7 +2601,7 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     const { email, password, fullName } = req.body;
 
     // ✅ Check if user already exists by email only
-    const [existingUsers] = await pool.execute(
+    const [existingUsers] = await db.query(
       "SELECT id FROM interns WHERE email = ?",
       [email]
     );
@@ -2635,7 +2619,7 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     const verificationToken = generateToken();
 
     // ✅ Insert new user
-    const [result] = await pool.execute(
+    const [result] = await db.query(
       `INSERT INTO interns (full_name, email, password_hash, verification_token) 
        VALUES (?, ?, ?, ?)`,
       [fullName, email, passwordHash, verificationToken]
@@ -2689,14 +2673,14 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
     const clientIp = req.ip || req.connection.remoteAddress;
 
     // Get user from database
-    const [users] = await pool.execute(
+    const [users] = await db.query(
       "SELECT id, full_name, email, password_hash, is_verified FROM interns WHERE email = ?",
       [email]
     );
 
     if (users.length === 0) {
       // Log failed attempt
-      await pool.execute(
+      await db.query(
         "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
         [email, clientIp, false]
       );
@@ -2717,7 +2701,7 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
 
     if (!isValidPassword) {
       // Log failed attempt
-      await pool.execute(
+      await db.query(
         "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
         [email, clientIp, false]
       );
@@ -2732,12 +2716,12 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
     });
 
     // Update last login
-    await pool.execute("UPDATE interns SET last_login = NOW() WHERE id = ?", [
+    await db.query("UPDATE interns SET last_login = NOW() WHERE id = ?", [
       user.id,
     ]);
 
     // Log successful attempt
-    await pool.execute(
+    await db.query(
       "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
       [email, clientIp, true]
     );
@@ -2774,7 +2758,7 @@ app.post(
       const { email } = req.body;
 
       // Check if user exists
-      const [users] = await pool.execute(
+      const [users] = await db.query(
         "SELECT id, full_name FROM interns WHERE email = ?",
         [email]
       );
@@ -2791,7 +2775,7 @@ app.post(
         const resetExpires = new Date(Date.now() + 3600000); // 1 hour
 
         // Save reset token
-        await pool.execute(
+        await db.query(
           "UPDATE interns SET reset_token = ?, reset_token_expires = ? WHERE id = ?",
           [resetToken, resetExpires, user.id]
         );
@@ -2846,7 +2830,7 @@ app.post(
       const { token, password } = req.body;
 
       // Find user with valid reset token
-      const [users] = await pool.execute(
+      const [users] = await db.query(
         "SELECT id FROM interns WHERE reset_token = ? AND reset_token_expires > NOW()",
         [token]
       );
@@ -2863,7 +2847,7 @@ app.post(
       const passwordHash = await bcrypt.hash(password, 12);
 
       // Update password and clear reset token
-      await pool.execute(
+      await db.query(
         "UPDATE interns SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?",
         [passwordHash, user.id]
       );
@@ -2886,7 +2870,7 @@ app.get("/api/auth/verify-email", async (req, res) => {
     }
 
     // Find user with verification token
-    const [users] = await pool.execute(
+    const [users] = await db.query(
       "SELECT id, email FROM interns WHERE verification_token = ?",
       [token]
     );
@@ -2898,7 +2882,7 @@ app.get("/api/auth/verify-email", async (req, res) => {
     const user = users[0];
 
     // Update user as verified
-    await pool.execute(
+    await db.query(
       "UPDATE interns SET is_verified = TRUE, verification_token = NULL WHERE id = ?",
       [user.id]
     );
@@ -2913,7 +2897,7 @@ app.get("/api/auth/verify-email", async (req, res) => {
 // 6. Get User Profile (Protected Route)
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
   try {
-    const [users] = await pool.execute(
+    const [users] = await db.query(
       "SELECT id, full_name, email, created_at, last_login FROM interns WHERE id = ?",
       [req.user.userId]
     );
@@ -2961,7 +2945,7 @@ app.post(
       const { email } = req.body;
 
       // Check if user exists and is not verified
-      const [users] = await pool.execute(
+      const [users] = await db.query(
         "SELECT id, full_name, is_verified FROM interns WHERE email = ?",
         [email]
       );
@@ -2980,7 +2964,7 @@ app.post(
       const verificationToken = generateToken();
 
       // Update verification token
-      await pool.execute(
+      await db.query(
         "UPDATE interns SET verification_token = ? WHERE id = ?",
         [verificationToken, user.id]
       );
@@ -3009,3 +2993,393 @@ app.post(
     }
   }
 );
+
+
+
+//InternShip
+
+// File upload configuration
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = 'uploads/';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only images and documents are allowed'));
+    }
+  }
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
+
+
+// Helper function to calculate days remaining
+const calculateDaysRemaining = (endDate) => {
+  const today = new Date();
+  const end = new Date(endDate);
+  const diffTime = end - today;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays > 0 ? diffDays : 0;
+};
+
+// ============= DASHBOARD ROUTES =============
+
+// Get dashboard data for authenticated intern
+app.get('/api/dashboard', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    // Get intern basic info
+    const [internInfo] = await db.query(
+      'SELECT full_name, email, status, progress, start_date, end_date FROM interns WHERE id = ?',
+      [internId]
+    );
+
+    if (internInfo.length === 0) {
+      return res.status(404).json({ message: 'Intern not found' });
+    }
+
+    const intern = internInfo[0];
+
+    // Get tasks statistics
+    const [taskStats] = await db.query(
+      `SELECT 
+        COUNT(*) as total_tasks,
+        SUM(CASE WHEN status IN ('completed', 'submitted') THEN 1 ELSE 0 END) as completed_tasks,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks
+      FROM tasks WHERE assigned_to = ?`,
+      [internId]
+    );
+
+    // Get next upcoming deadline
+    const [upcomingTask] = await db.query(
+      'SELECT title, due_date FROM tasks WHERE assigned_to = ? AND due_date > NOW() ORDER BY due_date ASC LIMIT 1',
+      [internId]
+    );
+
+    // Calculate days remaining
+    const daysRemaining = intern.end_date ? calculateDaysRemaining(intern.end_date) : 0;
+
+    // Calculate certificate progress based on completed tasks
+    const certificateProgress = taskStats[0].total_tasks > 0 
+      ? Math.round((taskStats[0].completed_tasks / taskStats[0].total_tasks) * 100)
+      : 0;
+
+    // Format upcoming deadline
+    const upcomingDeadline = upcomingTask.length > 0 
+      ? `${new Date(upcomingTask[0].due_date).toLocaleDateString()} – ${upcomingTask[0].title}`
+      : 'No upcoming deadlines';
+
+    res.json({
+      internData: {
+        name: intern.full_name,
+        profilePhoto: null,
+        trainingEndDate: intern.end_date ? new Date(intern.end_date).toLocaleDateString() : 'Not set',
+        tasksCompleted: taskStats[0].completed_tasks,
+        totalTasks: taskStats[0].total_tasks,
+        daysRemaining,
+        upcomingDeadline,
+        certificateProgress
+      }
+    });
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= TASK ROUTES =============
+
+// Get all tasks for authenticated intern
+app.get('/api/tasks', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    const [tasks] = await db.query(
+      `SELECT 
+        id, title, description, status, due_date, created_at, 
+        submission_text, submission_file_path, feedback, grade
+      FROM tasks 
+      WHERE assigned_to = ? 
+      ORDER BY due_date ASC`,
+      [internId]
+    );
+
+    const formattedTasks = tasks.map(task => ({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      assignedDate: new Date(task.created_at).toISOString().split('T')[0],
+      dueDate: new Date(task.due_date).toISOString().split('T')[0],
+      status: task.status.charAt(0).toUpperCase() + task.status.slice(1).replace('_', ' '),
+      submissionText: task.submission_text,
+      submissionFile: task.submission_file_path,
+      feedback: task.feedback,
+      grade: task.grade
+    }));
+
+    res.json(formattedTasks);
+  } catch (error) {
+    console.error('Tasks fetch error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get single task details
+app.get('/api/tasks/:id', authenticateToken, async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const internId = req.user.id;
+
+    const [tasks] = await db.query(
+      'SELECT * FROM tasks WHERE id = ? AND assigned_to = ?',
+      [taskId, internId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    res.json(tasks[0]);
+  } catch (error) {
+    console.error('Task details error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Submit task
+app.post('/api/tasks/:id/submit', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const internId = req.user.id;
+    const { submissionText } = req.body;
+
+    // Check if task exists and belongs to intern
+    const [tasks] = await db.query(
+      'SELECT id FROM tasks WHERE id = ? AND assigned_to = ?',
+      [taskId, internId]
+    );
+
+    if (tasks.length === 0) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Prepare update query
+    let updateQuery = 'UPDATE tasks SET submission_text = ?, status = "submitted", updated_at = NOW()';
+    let updateParams = [submissionText];
+
+    // Add file path if file was uploaded
+    if (req.file) {
+      updateQuery += ', submission_file_path = ?';
+      updateParams.push(req.file.path);
+    }
+
+    updateQuery += ' WHERE id = ? AND assigned_to = ?';
+    updateParams.push(taskId, internId);
+
+    await db.query(updateQuery, updateParams);
+
+    res.json({ message: 'Task submitted successfully' });
+  } catch (error) {
+    console.error('Task submission error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= ANNOUNCEMENTS ROUTES =============
+
+// Get announcements (you can expand this to fetch from a database table)
+app.get('/api/announcements', authenticateToken, async (req, res) => {
+  try {
+    // For now, returning static announcements
+    // You can create an announcements table and fetch from there
+    const announcements = [
+      "Project submission deadline extended to July 5.",
+      "New training materials available in the resources section.",
+      "Monthly intern meet-up scheduled for July 20th.",
+      "Please complete your mid-term evaluation by the end of this week."
+    ];
+
+    res.json(announcements);
+  } catch (error) {
+    console.error('Announcements error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= CERTIFICATE ROUTES =============
+
+// Get certificate status
+app.get('/api/certificate', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    const [certificates] = await db.query(
+      'SELECT * FROM certificates WHERE intern_id = ?',
+      [internId]
+    );
+
+    if (certificates.length === 0) {
+      return res.status(404).json({ message: 'No certificate found' });
+    }
+
+    res.json(certificates[0]);
+  } catch (error) {
+    console.error('Certificate error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Download certificate
+app.get('/api/certificate/download', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    const [certificates] = await db.query(
+      'SELECT certificate_file_path FROM certificates WHERE intern_id = ? AND status = "issued"',
+      [internId]
+    );
+
+    if (certificates.length === 0) {
+      return res.status(404).json({ message: 'Certificate not available for download' });
+    }
+
+    const filePath = certificates[0].certificate_file_path;
+    if (fs.existsSync(filePath)) {
+      res.download(filePath);
+    } else {
+      res.status(404).json({ message: 'Certificate file not found' });
+    }
+  } catch (error) {
+    console.error('Certificate download error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= PROFILE ROUTES =============
+
+// Get intern profile
+app.get('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    const [profile] = await db.query(
+      'SELECT employee_id, full_name, email, phone, address, start_date, end_date, status, progress, batch FROM interns WHERE id = ?',
+      [internId]
+    );
+
+    if (profile.length === 0) {
+      return res.status(404).json({ message: 'Profile not found' });
+    }
+
+    res.json(profile[0]);
+  } catch (error) {
+    console.error('Profile error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update intern profile
+app.put('/api/profile', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+    const { full_name, phone, address } = req.body;
+
+    await db.query(
+      'UPDATE interns SET full_name = ?, phone = ?, address = ?, updated_at = NOW() WHERE id = ?',
+      [full_name, phone, address, internId]
+    );
+
+    res.json({ message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Profile update error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= TIMELINE ROUTES =============
+
+// Get training timeline
+app.get('/api/timeline', authenticateToken, async (req, res) => {
+  try {
+    const internId = req.user.id;
+
+    // Get intern's start and end dates
+    const [internInfo] = await db.query(
+      'SELECT start_date, end_date FROM interns WHERE id = ?',
+      [internId]
+    );
+
+    if (internInfo.length === 0) {
+      return res.status(404).json({ message: 'Intern not found' });
+    }
+
+    const { start_date, end_date } = internInfo[0];
+
+    // Calculate timeline steps based on start and end dates
+    const timelineSteps = [
+      { 
+        title: "Training Start", 
+        date: start_date ? new Date(start_date).toLocaleDateString() : "June 1, 2025", 
+        status: "completed" 
+      },
+      { 
+        title: "Basic Tasks", 
+        date: "June 15, 2025", 
+        status: "completed" 
+      },
+      { 
+        title: "Mid-review", 
+        date: "July 15, 2025", 
+        status: "current" 
+      },
+      { 
+        title: "Final Project", 
+        date: "August 1, 2025", 
+        status: "upcoming" 
+      },
+      { 
+        title: "Certificate Issued", 
+        date: end_date ? new Date(end_date).toLocaleDateString() : "August 15, 2025", 
+        status: "upcoming" 
+      }
+    ];
+
+    res.json(timelineSteps);
+  } catch (error) {
+    console.error('Timeline error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ============= ERROR HANDLING =============
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Global error:', error);
+  res.status(500).json({ message: 'Something went wrong!' });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' });
+});

@@ -19,8 +19,9 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.1",
-    "mysql2": "^3.14.1",
-    "nodemailer": "^7.0.4"
+    "mysql2": "^3.14.2",
+    "nodemailer": "^7.0.4",
+    "pg": "^8.16.3"
   },
   "description": ""
 }

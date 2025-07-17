@@ -2084,8 +2084,6 @@ app.get(
 
 app.get("/api/courses", async (req, res) => {
   try {
-    const connection = req.db;
-
     // Get all active courses
     const coursesQuery = `
       SELECT id, title, icon, description, duration, student_count, level, created_at, updated_at
@@ -2094,41 +2092,41 @@ app.get("/api/courses", async (req, res) => {
       ORDER BY id ASC
     `;
 
-    const [courses] = await connection.execute(coursesQuery);
+    const coursesResult = await db.query(coursesQuery);
+    const courses = coursesResult.rows;
 
-    // For each course, get platforms, topics, and features
     for (let course of courses) {
       // Get platforms
       const platformsQuery = `
         SELECT p.name 
         FROM platforms p
         JOIN course_platforms cp ON p.id = cp.platform_id
-        WHERE cp.course_id = ?
+        WHERE cp.course_id = $1
       `;
-      const [platforms] = await connection.execute(platformsQuery, [course.id]);
-      course.platforms = platforms.map((p) => p.name);
+      const platformsResult = await db.query(platformsQuery, [course.id]);
+      course.platforms = platformsResult.rows.map((p) => p.name);
 
       // Get topics
       const topicsQuery = `
         SELECT topic_name 
         FROM course_topics 
-        WHERE course_id = ?
+        WHERE course_id = $1
         ORDER BY topic_order ASC
       `;
-      const [topics] = await connection.execute(topicsQuery, [course.id]);
-      course.topics = topics.map((t) => t.topic_name);
+      const topicsResult = await db.query(topicsQuery, [course.id]);
+      course.topics = topicsResult.rows.map((t) => t.topic_name);
 
       // Get features
       const featuresQuery = `
         SELECT feature_name 
         FROM course_features 
-        WHERE course_id = ?
+        WHERE course_id = $1
         ORDER BY feature_order ASC
       `;
-      const [features] = await connection.execute(featuresQuery, [course.id]);
-      course.features = features.map((f) => f.feature_name);
+      const featuresResult = await db.query(featuresQuery, [course.id]);
+      course.features = featuresResult.rows.map((f) => f.feature_name);
 
-      // Rename student_count to students for frontend compatibility
+      // Rename student_count to students
       course.students = course.student_count;
       delete course.student_count;
     }

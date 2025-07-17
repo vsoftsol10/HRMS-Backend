@@ -19,7 +19,7 @@ const app = express();
 // CORS Configuration
 const corsOptions = {
   origin: [
-    'https://hrms-backend-5wau.onrender.com/',
+    'https://hrms-backend-5wau.onrender.com',
     'http://localhost:3000',
     'https://portal.thevsoft.com',
     'http://localhost:5173',

@@ -12,6 +12,12 @@ const pool = new Pool({
     rejectUnauthorized: false
   }
 });
+// const pool = new Pool({
+//   connectionString: process.env.DATABASE_URL, // Your Supabase connection string
+//   ssl: {
+//     rejectUnauthorized: false
+//   }
+// });
 
 pool.connect()
   .then(() => console.log('✅ PostgreSQL connected'))

@@ -1,4 +1,5 @@
 require("dotenv").config();
+const { Pool } = require('pg'); // ✅ Import Pool from pg
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -16,6 +17,17 @@ const db = require('./src/config/database'); // PostgreSQL connection
 const PORT = process.env.PORT || 8080;
 const app = express();
 
+
+
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Your Supabase connection string
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+
 // CORS Configuration
 const corsOptions = {
   origin: [
@@ -23,7 +35,6 @@ const corsOptions = {
     'http://localhost:3000',
     'https://portal.thevsoft.com',
     'http://localhost:5173',
-    'https://hrmsfront.vercel.app',
     'https://localhost:5173',
   ],
   credentials: true,
@@ -40,12 +51,22 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-// Apply Middleware
+
+
+
+//Middleware
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Preflight
+app.options('*', cors(corsOptions)); // preflight requests
+
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 app.use(helmet());
+
+//CORS TEST
+app.get('/api/cors-test', (req, res) => {
+  res.json({ success: true, message: 'CORS test successful' });
+});
+
 
 // PostgreSQL Test Route
 app.get('/api/test-db', async (req, res) => {
@@ -63,13 +84,11 @@ app.use((err, req, res, next) => {
   if (err.message === "Not allowed by CORS") {
     return res.status(403).json({
       success: false,
-      message: "CORS Error: This origin is not allowed.",
+      message: "CORS Error: This origin is not allowed."
     });
   }
   next(err);
 });
-
-
 
 
 // Create payrolls table if it doesn't exist
@@ -112,6 +131,9 @@ async function initializeDatabase() {
 
 // Initialize database
 initializeDatabase();
+
+
+
 
 // Add this route handler before your other routes or after your existing routes
 // This should go before app.listen()
@@ -569,11 +591,8 @@ app.get("/api/employee/:employeeId/dashboard", async (req, res) => {
 });
 
 
-//Employee Management
+// Employee Management - PostgreSQL Version
 
-// Add these employee management endpoints to your existing backend code
-
-// GET API - Fetch all employees
 app.get("/api/employees", async (req, res) => {
   try {
     const query = `
@@ -590,14 +609,20 @@ app.get("/api/employees", async (req, res) => {
       ORDER BY e.created_at DESC
     `;
 
-    const [rows] = await db.query(query);
+    const result = await pool.query(query);
 
-    const employees = rows.map((row) => ({
+    // Ensure result.rows is an array
+    if (!Array.isArray(result.rows)) {
+      return res.status(500).json({
+        message: "Unexpected response format",
+        error: "result.rows is not iterable",
+      });
+    }
+
+    const employees = result.rows.map((row) => ({
       id: row.id,
       employeeCode: row.employee_code,
-      fullName: `${row.first_name} ${
-        row.middle_name ? row.middle_name + " " : ""
-      }${row.last_name}`,
+      fullName: `${row.first_name} ${row.middle_name ? row.middle_name + " " : ""}${row.last_name}`,
       firstName: row.first_name,
       middleName: row.middle_name,
       lastName: row.last_name,
@@ -640,13 +665,15 @@ app.get("/api/employees", async (req, res) => {
     res.json(employees);
   } catch (error) {
     console.error("Error fetching employees:", error);
-    res
-      .status(500)
-      .json({ message: "Error fetching employees", error: error.message });
+    res.status(500).json({
+      message: "Error fetching employees",
+      error: error.message,
+    });
   }
 });
 
-// GET API - Fetch single employee by ID
+
+// GET - Fetch single employee by ID
 app.get("/api/employees/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -660,10 +687,11 @@ app.get("/api/employees/:id", async (req, res) => {
       LEFT JOIN departments d ON e.department_id = d.id
       LEFT JOIN positions p ON e.position_id = p.id
       LEFT JOIN employees m ON e.manager_id = m.id
-      WHERE e.id = ?
+      WHERE e.id = $1
     `;
 
-    const [rows] = await db.query(query, [id]);
+    const result = await pool.query(query, [id]);
+    const rows = result.rows;
 
     if (rows.length === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -673,9 +701,7 @@ app.get("/api/employees/:id", async (req, res) => {
     const employee = {
       id: row.id,
       employeeCode: row.employee_code,
-      fullName: `${row.first_name} ${
-        row.middle_name ? row.middle_name + " " : ""
-      }${row.last_name}`,
+      fullName: `${row.first_name} ${row.middle_name ? row.middle_name + " " : ""}${row.last_name}`,
       firstName: row.first_name,
       middleName: row.middle_name,
       lastName: row.last_name,
@@ -718,13 +744,11 @@ app.get("/api/employees/:id", async (req, res) => {
     res.json(employee);
   } catch (error) {
     console.error("Error fetching employee:", error);
-    res
-      .status(500)
-      .json({ message: "Error fetching employee", error: error.message });
+    res.status(500).json({ message: "Error fetching employee", error: error.message });
   }
 });
 
-// POST API - Create new employee
+// POST - Create new employee
 app.post("/api/employees", async (req, res) => {
   try {
     const {
@@ -768,7 +792,8 @@ app.post("/api/employees", async (req, res) => {
         emergency_contact_name, emergency_contact_phone, emergency_contact_relationship,
         department_id, position_id, manager_id, hire_date, probation_end_date,
         confirmation_date, employment_type, work_location, status, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+      RETURNING id
     `;
 
     const values = [
@@ -804,25 +829,23 @@ app.post("/api/employees", async (req, res) => {
       notes,
     ];
 
-    const [result] = await db.query(insertQuery, values);
+    const result = await pool.query(insertQuery, values);
 
     res.status(201).json({
       message: "Employee created successfully",
-      id: result.insertId,
+      id: result.rows[0].id,
     });
   } catch (error) {
     console.error("Error creating employee:", error);
-    if (error.code === "ER_DUP_ENTRY") {
+    if (error.code === "23505") { // PostgreSQL unique constraint violation
       res.status(400).json({ message: "Employee code already exists" });
     } else {
-      res
-        .status(500)
-        .json({ message: "Error creating employee", error: error.message });
+      res.status(500).json({ message: "Error creating employee", error: error.message });
     }
   }
 });
 
-// PUT API - Update employee
+// PUT - Update employee
 app.put("/api/employees/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -870,38 +893,33 @@ app.put("/api/employees/:id", async (req, res) => {
       return d.toISOString().split("T")[0]; // YYYY-MM-DD format
     };
 
-    // Add validation before the update
+    // Validation
     if (departmentId) {
-      const [deptCheck] = await db.query(
-        "SELECT id FROM departments WHERE id = ?",
-        [departmentId]
-      );
-      if (deptCheck.length === 0) {
+      const deptCheck = await pool.query("SELECT id FROM departments WHERE id = $1", [departmentId]);
+      if (deptCheck.rows.length === 0) {
         return res.status(400).json({ message: "Invalid department ID" });
       }
     }
 
     if (positionId) {
-      const [posCheck] = await db.query(
-        "SELECT id FROM positions WHERE id = ?",
-        [positionId]
-      );
-      if (posCheck.length === 0) {
+      const posCheck = await pool.query("SELECT id FROM positions WHERE id = $1", [positionId]);
+      if (posCheck.rows.length === 0) {
         return res.status(400).json({ message: "Invalid position ID" });
       }
     }
 
     const updateQuery = `
       UPDATE employees SET
-        employee_code = ?, first_name = ?, middle_name = ?, last_name = ?,
-        date_of_birth = ?, gender = ?, marital_status = ?, nationality = ?,
-        religion = ?, personal_email = ?, phone = ?, alternate_phone = ?,
-        address = ?, city = ?, state = ?, country = ?, postal_code = ?,
-        emergency_contact_name = ?, emergency_contact_phone = ?, emergency_contact_relationship = ?,
-        department_id = ?, position_id = ?, manager_id = ?, hire_date = ?,
-        probation_end_date = ?, confirmation_date = ?, employment_type = ?,
-        work_location = ?, status = ?, notes = ?
-      WHERE id = ?
+        employee_code = $1, first_name = $2, middle_name = $3, last_name = $4,
+        date_of_birth = $5, gender = $6, marital_status = $7, nationality = $8,
+        religion = $9, personal_email = $10, phone = $11, alternate_phone = $12,
+        address = $13, city = $14, state = $15, country = $16, postal_code = $17,
+        emergency_contact_name = $18, emergency_contact_phone = $19, emergency_contact_relationship = $20,
+        department_id = $21, position_id = $22, manager_id = $23, hire_date = $24,
+        probation_end_date = $25, confirmation_date = $26, employment_type = $27,
+        work_location = $28, status = $29, notes = $30,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $31
     `;
 
     const values = [
@@ -938,54 +956,49 @@ app.put("/api/employees/:id", async (req, res) => {
       id,
     ];
 
-    console.log("Update values:", values); // Debug log
+    const result = await pool.query(updateQuery, values);
 
-    const [result] = await db.query(updateQuery, values);
-
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
     res.json({ message: "Employee updated successfully" });
   } catch (error) {
     console.error("Error updating employee:", error);
-    console.error("Error details:", error.code, error.sqlMessage); // More detailed error info
     res.status(500).json({
       message: "Error updating employee",
       error: error.message,
-      code: error.code,
     });
   }
 });
-// DELETE API - Delete employee
+
+// DELETE - Delete employee
 app.delete("/api/employees/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
-    const [result] = await db.query("DELETE FROM employees WHERE id = ?", [
-      id,
-    ]);
+    const result = await pool.query("DELETE FROM employees WHERE id = $1", [id]);
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
     res.status(200).json({ message: "Employee deleted successfully" });
   } catch (error) {
     console.error("Error deleting employee:", error);
-    res
-      .status(500)
-      .json({ message: "Error deleting employee", error: error.message });
+    res.status(500).json({ message: "Error deleting employee", error: error.message });
   }
 });
+
+
 
 // GET API - Fetch departments for dropdown
 app.get("/api/departments", async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const result = await pool.query(
       "SELECT id, name FROM departments ORDER BY name"
     );
-    res.json(rows);
+    res.json(result.rows); // Use result.rows for PostgreSQL
   } catch (error) {
     console.error("Error fetching departments:", error);
     res
@@ -997,10 +1010,10 @@ app.get("/api/departments", async (req, res) => {
 // GET API - Fetch positions for dropdown
 app.get("/api/positions", async (req, res) => {
   try {
-    const [rows] = await db.query(
+    const result = await pool.query(
       "SELECT id, title FROM positions ORDER BY title"
     );
-    res.json(rows);
+    res.json(result.rows); // Use result.rows for PostgreSQL
   } catch (error) {
     console.error("Error fetching positions:", error);
     res
@@ -1018,8 +1031,8 @@ app.get("/api/managers", async (req, res) => {
       WHERE status = 'active' 
       ORDER BY first_name, last_name
     `;
-    const [rows] = await db.query(query);
-    res.json(rows);
+    const result = await pool.query(query);
+    res.json(result.rows); // Use result.rows for PostgreSQL
   } catch (error) {
     console.error("Error fetching managers:", error);
     res
@@ -1027,6 +1040,7 @@ app.get("/api/managers", async (req, res) => {
       .json({ message: "Error fetching managers", error: error.message });
   }
 });
+
 
 // Add this endpoint to your existing backend code
 
@@ -1664,7 +1678,6 @@ async function initializeGeofencingTables() {
     await db.query(createLocationsTable);
     console.log("✅ Work locations table created successfully!");
 
-    // Note: ALTER TABLE with IF NOT EXISTS might not work in all MySQL versions
     // You might need to check if columns exist first
     try {
       await db.query(alterAttendanceTable);
@@ -2081,7 +2094,7 @@ app.get(
     }
   }
 );
-
+//Courses API
 app.get("/api/courses", async (req, res) => {
   try {
     // Get all active courses

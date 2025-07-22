@@ -1054,61 +1054,50 @@ app.get("/api/profile/:employeeCode", async (req, res) => {
     const query = `
       SELECT 
         e.*,
-        d.name as department_name,
-        p.title as position_title,
-        CONCAT(m.first_name, ' ', m.last_name) as manager_name
+        d.name AS department_name,
+        p.title AS position_title,
+        CONCAT(m.first_name, ' ', m.last_name) AS manager_name
       FROM employees e
       LEFT JOIN departments d ON e.department_id = d.id
       LEFT JOIN positions p ON e.position_id = p.id
       LEFT JOIN employees m ON e.manager_id = m.id
-      WHERE e.employee_code = ? AND e.status != 'terminated'
+      WHERE e.employee_code = $1 AND e.status != 'terminated'
     `;
 
-    const [rows] = await db.query(query, [employeeCode]);
+    const result = await pool.query(query, [employeeCode]);
 
-    if (rows.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(404).json({ message: "Employee profile not found" });
     }
 
-    const row = rows[0];
+    const row = result.rows[0];
 
-    // Calculate age
     const calculateAge = (birthDate) => {
       if (!birthDate) return 0;
       const today = new Date();
       const birth = new Date(birthDate);
       let age = today.getFullYear() - birth.getFullYear();
       const monthDiff = today.getMonth() - birth.getMonth();
-      if (
-        monthDiff < 0 ||
-        (monthDiff === 0 && today.getDate() < birth.getDate())
-      ) {
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
         age--;
       }
       return age;
     };
 
-    // Calculate years of service
     const calculateYearsOfService = (hireDate) => {
       if (!hireDate) return 0;
       const today = new Date();
       const hire = new Date(hireDate);
       const diffTime = Math.abs(today - hire);
       const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-      return Math.round(diffYears * 10) / 10; // Round to 1 decimal place
+      return Math.round(diffYears * 10) / 10;
     };
 
-    // Format the employee data to match your MyProfile component structure
     const profileData = {
-      // Personal Information
-      fullName: `${row.first_name} ${
-        row.middle_name ? row.middle_name + " " : ""
-      }${row.last_name}`,
+      fullName: `${row.first_name} ${row.middle_name ? row.middle_name + " " : ""}${row.last_name}`,
       employeeId: row.employee_code,
       profilePhoto: row.profile_picture || "/api/placeholder/150/150",
-      dateOfBirth: row.date_of_birth
-        ? row.date_of_birth.toISOString().split("T")[0]
-        : "",
+      dateOfBirth: row.date_of_birth ? row.date_of_birth.toISOString().split("T")[0] : "",
       age: calculateAge(row.date_of_birth),
       gender: row.gender || "",
       maritalStatus: row.marital_status || "",
@@ -1117,45 +1106,34 @@ app.get("/api/profile/:employeeCode", async (req, res) => {
       phoneNumber: row.phone || "",
       alternatePhone: row.alternate_phone || "",
       currentAddress: row.address || "",
-      permanentAddress: row.address || "", // Using same address for both
+      permanentAddress: row.address || "",
 
-      // Emergency Contact
       emergencyContactName: row.emergency_contact_name || "",
       emergencyContactRelation: row.emergency_contact_relationship || "",
       emergencyContactPhone: row.emergency_contact_phone || "",
-      emergencyContactEmail: "", // Not in your current schema
+      emergencyContactEmail: "",
 
-      // Professional Information
       jobTitle: row.position_title || "",
       department: row.department_name || "",
       employeeType: row.employment_type || "",
-      dateOfJoining: row.hire_date
-        ? row.hire_date.toISOString().split("T")[0]
-        : "",
+      dateOfJoining: row.hire_date ? row.hire_date.toISOString().split("T")[0] : "",
       yearsOfService: calculateYearsOfService(row.hire_date),
       reportingManager: row.manager_name || "",
       workLocation: row.work_location || "",
       employeeStatus: row.status || "Active",
 
-      // Employment Details (You might need to add these to employees table or fetch from payroll)
-      currentSalary: "$0", // You'll need to fetch this from payroll table
-      workSchedule: "Monday - Friday, 9:00 AM - 6:00 PM", // Default value
-      benefits: [
-        "Health Insurance",
-        "Dental Coverage",
-        "401(k)",
-        "Paid Time Off",
-      ], // Default values
+      currentSalary: "$0",
+      workSchedule: "Monday - Friday, 9:00 AM - 6:00 PM",
+      benefits: ["Health Insurance", "Dental Coverage", "401(k)", "Paid Time Off"],
     };
 
     res.json(profileData);
   } catch (error) {
     console.error("Error fetching employee profile:", error);
-    res
-      .status(500)
-      .json({ message: "Error fetching profile", error: error.message });
+    res.status(500).json({ message: "Error fetching profile", error: error.message });
   }
 });
+
 
 // PUT API - Update employee profile
 app.put("/api/profile/:employeeCode", async (req, res) => {
@@ -1163,20 +1141,28 @@ app.put("/api/profile/:employeeCode", async (req, res) => {
     const employeeCode = req.params.employeeCode;
     const profileData = req.body;
 
-    // Split full name into parts (basic implementation)
     const nameParts = profileData.fullName.trim().split(" ");
     const firstName = nameParts[0] || "";
     const lastName = nameParts[nameParts.length - 1] || "";
-    const middleName =
-      nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+    const middleName = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
 
     const updateQuery = `
       UPDATE employees SET
-        first_name = ?, middle_name = ?, last_name = ?,
-        date_of_birth = ?, gender = ?, marital_status = ?, nationality = ?,
-        personal_email = ?, phone = ?, alternate_phone = ?, address = ?,
-        emergency_contact_name = ?, emergency_contact_phone = ?, emergency_contact_relationship = ?
-      WHERE employee_code = ?
+        first_name = $1,
+        middle_name = $2,
+        last_name = $3,
+        date_of_birth = $4,
+        gender = $5,
+        marital_status = $6,
+        nationality = $7,
+        personal_email = $8,
+        phone = $9,
+        alternate_phone = $10,
+        address = $11,
+        emergency_contact_name = $12,
+        emergency_contact_phone = $13,
+        emergency_contact_relationship = $14
+      WHERE employee_code = $15
     `;
 
     const values = [
@@ -1197,20 +1183,19 @@ app.put("/api/profile/:employeeCode", async (req, res) => {
       employeeCode,
     ];
 
-    const [result] = await db.query(updateQuery, values);
+    const result = await pool.query(updateQuery, values);
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
     res.json({ message: "Profile updated successfully" });
   } catch (error) {
     console.error("Error updating profile:", error);
-    res
-      .status(500)
-      .json({ message: "Error updating profile", error: error.message });
+    res.status(500).json({ message: "Error updating profile", error: error.message });
   }
 });
+
 
 // Attendance API Routes
 

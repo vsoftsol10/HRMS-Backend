@@ -38,12 +38,14 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
+    console.log("Incoming Origin:", origin);
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS"));
     }
   },
+    origin: true, // Allow all origins for now
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -3031,21 +3033,6 @@ app.post(
     }
   }
 );
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('Received SIGINT. Graceful shutdown...');
-  await db.end();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM. Graceful shutdown...');
-  await db.end();
-  process.exit(0);
-});
-
-
 
 //InternShip
 

@@ -2470,31 +2470,24 @@ app.delete("/api/courses/:id", async (req, res) => {
 
 
 
-/**************************************/
 
-// Import PostgreSQL client instead of MySQL
-// const { Pool } = require('pg');
 
-// PostgreSQL connection configuration
-// const db = new Pool({
-//   host: process.env.DB_HOST || 'localhost',
-//   port: process.env.DB_PORT || 5432,
-//   database: process.env.DB_NAME,
-//   user: process.env.DB_USER,
-//   password: process.env.DB_PASSWORD,
-//   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-//   max: 20, // Maximum number of clients in the pool
-//   idleTimeoutMillis: 30000,
-//   connectionTimeoutMillis: 2000,
-// });
+// Security middleware
+app.use(helmet());
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "https://portal.thevsoft.com",
+    credentials: true,
+  })
+);
+app.use(express.json({ limit: "10mb" }));
 
-const isProd = process.env.NODE_ENV === 'production';
-
+// Rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isProd ? 20 : 1000, // ✅ 20 in production, 1000 in dev
+  max: 5, // 5 attempts per IP
   message: {
-    error: "Too many authentication attempts. Please try again later.",
+    error: "Too many authentication attempts, please try again later.",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -2502,16 +2495,12 @@ const authLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isProd ? 100 : 1000, // ✅ Relaxed in dev
-  message: {
-    error: "Too many requests. Please slow down.",
-  },
+  max: 100,
+  message: { error: "Too many requests from this IP, please try again later." },
 });
 
-// Apply them
 app.use("/api/auth", authLimiter);
 app.use("/api", generalLimiter);
-
 
 // Email configuration
 const emailTransporter = nodemailer.createTransport({

@@ -29,14 +29,21 @@ const pool = new Pool({
 
 
 // CORS Configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://localhost:5173',
+  'https://portal.thevsoft.com'
+];
+
 const corsOptions = {
-  origin: [
-    'https://hrms-backend-5wau.onrender.com',
-    'http://localhost:3000',
-    'https://portal.thevsoft.com',
-    'http://localhost:5173',
-    'https://localhost:5173',
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -50,9 +57,6 @@ const corsOptions = {
   ],
   optionsSuccessStatus: 200
 };
-
-
-
 
 //Middleware
 app.use(cors(corsOptions));
@@ -2466,6 +2470,22 @@ app.delete("/api/courses/:id", async (req, res) => {
 
 /**************************************/
 
+// Import PostgreSQL client instead of MySQL
+// const { Pool } = require('pg');
+
+// PostgreSQL connection configuration
+// const db = new Pool({
+//   host: process.env.DB_HOST || 'localhost',
+//   port: process.env.DB_PORT || 5432,
+//   database: process.env.DB_NAME,
+//   user: process.env.DB_USER,
+//   password: process.env.DB_PASSWORD,
+//   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+//   max: 20, // Maximum number of clients in the pool
+//   idleTimeoutMillis: 30000,
+//   connectionTimeoutMillis: 2000,
+// });
+
 // Security middleware
 app.use(helmet());
 app.use(
@@ -2587,6 +2607,7 @@ const authenticateToken = async (req, res, next) => {
 
 // 1. Sign Up Route
 app.post("/api/auth/register", validateSignUp, async (req, res) => {
+  const client = await db.connect();
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -2599,11 +2620,11 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     const { email, password, fullName } = req.body;
 
     // ✅ Check if user already exists by email only
-    const [existingUsers] = await db.query(
-      "SELECT id FROM interns WHERE email = ?",
+    const existingUsers = await client.query(
+      "SELECT id FROM interns WHERE email = $1",
       [email]
     );
-    if (existingUsers.length > 0) {
+    if (existingUsers.rows.length > 0) {
       return res.status(409).json({
         error: "User with this email already exists",
       });
@@ -2617,9 +2638,9 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     const verificationToken = generateToken();
 
     // ✅ Insert new user
-    const [result] = await db.query(
+    const result = await client.query(
       `INSERT INTO interns (full_name, email, password_hash, verification_token) 
-       VALUES (?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4) RETURNING id`,
       [fullName, email, passwordHash, verificationToken]
     );
 
@@ -2645,7 +2666,7 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     res.status(201).json({
       message:
         "Account created successfully! Please check your email for verification.",
-      userId: result.insertId,
+      userId: result.rows[0].id,
       emailSent,
     });
   } catch (error) {
@@ -2653,11 +2674,14 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     res
       .status(500)
       .json({ error: "Internal server error during registration" });
+  } finally {
+    client.release();
   }
 });
 
 // 2. Sign In Route
 app.post("/api/auth/login", validateSignIn, async (req, res) => {
+  const client = await db.connect();
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -2671,21 +2695,21 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
     const clientIp = req.ip || req.connection.remoteAddress;
 
     // Get user from database
-    const [users] = await db.query(
-      "SELECT id, full_name, email, password_hash, is_verified FROM interns WHERE email = ?",
+    const users = await client.query(
+      "SELECT id, full_name, email, password_hash, is_verified FROM interns WHERE email = $1",
       [email]
     );
 
-    if (users.length === 0) {
+    if (users.rows.length === 0) {
       // Log failed attempt
-      await db.query(
-        "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
+      await client.query(
+        "INSERT INTO login_attempts (email, ip_address, success) VALUES ($1, $2, $3)",
         [email, clientIp, false]
       );
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    const user = users[0];
+    const user = users.rows[0];
 
     // Check if account is verified
     if (!user.is_verified) {
@@ -2699,8 +2723,8 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
 
     if (!isValidPassword) {
       // Log failed attempt
-      await db.query(
-        "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
+      await client.query(
+        "INSERT INTO login_attempts (email, ip_address, success) VALUES ($1, $2, $3)",
         [email, clientIp, false]
       );
       return res.status(401).json({ error: "Invalid email or password" });
@@ -2710,17 +2734,16 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
     const token = generateJWT({
       userId: user.id,
       email: user.email,
-      employeeId: user.employee_id,
     });
 
-    // Update last login
-    await db.query("UPDATE interns SET last_login = NOW() WHERE id = ?", [
+    // Update last login - using CURRENT_TIMESTAMP for PostgreSQL
+    await client.query("UPDATE interns SET last_login = CURRENT_TIMESTAMP WHERE id = $1", [
       user.id,
     ]);
 
     // Log successful attempt
-    await db.query(
-      "INSERT INTO login_attempts (email, ip_address, success) VALUES (?, ?, ?)",
+    await client.query(
+      "INSERT INTO login_attempts (email, ip_address, success) VALUES ($1, $2, $3)",
       [email, clientIp, true]
     );
 
@@ -2737,6 +2760,8 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
   } catch (error) {
     console.error("Sign in error:", error);
     res.status(500).json({ error: "Internal server error during login" });
+  } finally {
+    client.release();
   }
 });
 
@@ -2745,6 +2770,7 @@ app.post(
   "/api/auth/forgot-password",
   [body("email").isEmail().normalizeEmail()],
   async (req, res) => {
+    const client = await db.connect();
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -2756,8 +2782,8 @@ app.post(
       const { email } = req.body;
 
       // Check if user exists
-      const [users] = await db.query(
-        "SELECT id, full_name FROM interns WHERE email = ?",
+      const users = await client.query(
+        "SELECT id, full_name FROM interns WHERE email = $1",
         [email]
       );
 
@@ -2767,14 +2793,14 @@ app.post(
           "If an account with that email exists, we have sent a password reset link.",
       });
 
-      if (users.length > 0) {
-        const user = users[0];
+      if (users.rows.length > 0) {
+        const user = users.rows[0];
         const resetToken = generateToken();
         const resetExpires = new Date(Date.now() + 3600000); // 1 hour
 
         // Save reset token
-        await db.query(
-          "UPDATE interns SET reset_token = ?, reset_token_expires = ? WHERE id = ?",
+        await client.query(
+          "UPDATE interns SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
           [resetToken, resetExpires, user.id]
         );
 
@@ -2799,6 +2825,8 @@ app.post(
     } catch (error) {
       console.error("Forgot password error:", error);
       res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
     }
   }
 );
@@ -2816,6 +2844,7 @@ app.post(
       .withMessage("Password must meet security requirements"),
   ],
   async (req, res) => {
+    const client = await db.connect();
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -2828,25 +2857,25 @@ app.post(
       const { token, password } = req.body;
 
       // Find user with valid reset token
-      const [users] = await db.query(
-        "SELECT id FROM interns WHERE reset_token = ? AND reset_token_expires > NOW()",
+      const users = await client.query(
+        "SELECT id FROM interns WHERE reset_token = $1 AND reset_token_expires > CURRENT_TIMESTAMP",
         [token]
       );
 
-      if (users.length === 0) {
+      if (users.rows.length === 0) {
         return res
           .status(400)
           .json({ error: "Invalid or expired reset token" });
       }
 
-      const user = users[0];
+      const user = users.rows[0];
 
       // Hash new password
       const passwordHash = await bcrypt.hash(password, 12);
 
       // Update password and clear reset token
-      await db.query(
-        "UPDATE interns SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?",
+      await client.query(
+        "UPDATE interns SET password_hash = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
         [passwordHash, user.id]
       );
 
@@ -2854,12 +2883,15 @@ app.post(
     } catch (error) {
       console.error("Reset password error:", error);
       res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
     }
   }
 );
 
 // 5. Email Verification Route
 app.get("/api/auth/verify-email", async (req, res) => {
+  const client = await db.connect();
   try {
     const { token } = req.query;
 
@@ -2868,20 +2900,20 @@ app.get("/api/auth/verify-email", async (req, res) => {
     }
 
     // Find user with verification token
-    const [users] = await db.query(
-      "SELECT id, email FROM interns WHERE verification_token = ?",
+    const users = await client.query(
+      "SELECT id, email FROM interns WHERE verification_token = $1",
       [token]
     );
 
-    if (users.length === 0) {
+    if (users.rows.length === 0) {
       return res.status(400).json({ error: "Invalid verification token" });
     }
 
-    const user = users[0];
+    const user = users.rows[0];
 
     // Update user as verified
-    await db.query(
-      "UPDATE interns SET is_verified = TRUE, verification_token = NULL WHERE id = ?",
+    await client.query(
+      "UPDATE interns SET is_verified = TRUE, verification_token = NULL WHERE id = $1",
       [user.id]
     );
 
@@ -2889,25 +2921,30 @@ app.get("/api/auth/verify-email", async (req, res) => {
   } catch (error) {
     console.error("Email verification error:", error);
     res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
   }
 });
 
 // 6. Get User Profile (Protected Route)
 app.get("/api/user/profile", authenticateToken, async (req, res) => {
+  const client = await db.connect();
   try {
-    const [users] = await db.query(
-      "SELECT id, full_name, email, created_at, last_login FROM interns WHERE id = ?",
+    const users = await client.query(
+      "SELECT id, full_name, email, created_at, last_login FROM interns WHERE id = $1",
       [req.user.userId]
     );
 
-    if (users.length === 0) {
+    if (users.rows.length === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json({ user: users[0] });
+    res.json({ user: users.rows[0] });
   } catch (error) {
     console.error("Get profile error:", error);
     res.status(500).json({ error: "Internal server error" });
+  } finally {
+    client.release();
   }
 });
 
@@ -2932,6 +2969,7 @@ app.post(
   "/api/auth/resend-verification",
   [body("email").isEmail().normalizeEmail()],
   async (req, res) => {
+    const client = await db.connect();
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -2943,16 +2981,16 @@ app.post(
       const { email } = req.body;
 
       // Check if user exists and is not verified
-      const [users] = await db.query(
-        "SELECT id, full_name, is_verified FROM interns WHERE email = ?",
+      const users = await client.query(
+        "SELECT id, full_name, is_verified FROM interns WHERE email = $1",
         [email]
       );
 
-      if (users.length === 0) {
+      if (users.rows.length === 0) {
         return res.status(404).json({ error: "User not found" });
       }
 
-      const user = users[0];
+      const user = users.rows[0];
 
       if (user.is_verified) {
         return res.status(400).json({ error: "Account is already verified" });
@@ -2962,8 +3000,8 @@ app.post(
       const verificationToken = generateToken();
 
       // Update verification token
-      await db.query(
-        "UPDATE interns SET verification_token = ? WHERE id = ?",
+      await client.query(
+        "UPDATE interns SET verification_token = $1 WHERE id = $2",
         [verificationToken, user.id]
       );
 
@@ -2988,9 +3026,24 @@ app.post(
     } catch (error) {
       console.error("Resend verification error:", error);
       res.status(500).json({ error: "Internal server error" });
+    } finally {
+      client.release();
     }
   }
 );
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT. Graceful shutdown...');
+  await db.end();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM. Graceful shutdown...');
+  await db.end();
+  process.exit(0);
+});
 
 
 

@@ -2488,22 +2488,13 @@ app.delete("/api/courses/:id", async (req, res) => {
 //   connectionTimeoutMillis: 2000,
 // });
 
-// Security middleware
-app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "https://portal.thevsoft.com",
-    credentials: true,
-  })
-);
-app.use(express.json({ limit: "10mb" }));
+const isProd = process.env.NODE_ENV === 'production';
 
-// Rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per IP
+  max: isProd ? 20 : 1000, // ✅ 20 in production, 1000 in dev
   message: {
-    error: "Too many authentication attempts, please try again later.",
+    error: "Too many authentication attempts. Please try again later.",
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -2511,12 +2502,16 @@ const authLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: "Too many requests from this IP, please try again later." },
+  max: isProd ? 100 : 1000, // ✅ Relaxed in dev
+  message: {
+    error: "Too many requests. Please slow down.",
+  },
 });
 
+// Apply them
 app.use("/api/auth", authLimiter);
 app.use("/api", generalLimiter);
+
 
 // Email configuration
 const emailTransporter = nodemailer.createTransport({

@@ -2479,9 +2479,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 // Rate limiting
+const isDev = process.env.NODE_ENV !== "production";
+
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, // 5 attempts per IP
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 15, // loosen in dev
   message: {
     error: "Too many authentication attempts, please try again later.",
   },
@@ -2491,9 +2493,12 @@ const authLimiter = rateLimit({
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: "Too many requests from this IP, please try again later." },
+  max: isDev ? 5000 : 100,
+  message: {
+    error: "Too many requests from this IP, please try again later.",
+  },
 });
+
 
 app.use("/api/auth", authLimiter);
 app.use("/api", generalLimiter);

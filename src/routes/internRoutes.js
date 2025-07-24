@@ -1,3 +1,11 @@
+const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+const db = require('../db'); // Adjust if your db is in a different path
+const { authenticateToken } = require('../middleware/authMiddleware'); // Adjust path
+const app = express();
+
+
 //InternShip - PostgreSQL Compatible Version
 
 // File upload configuration

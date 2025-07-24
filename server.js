@@ -2468,10 +2468,6 @@ app.delete("/api/courses/:id", async (req, res) => {
   }
 });
 
-
-
-
-
 // Security middleware
 app.use(helmet());
 app.use(
@@ -2631,9 +2627,8 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     );
 
     // ✅ Send verification email
-    const verificationLink = `${
-      process.env.FRONTEND_URL || "https://portal.thevsoft.com"
-    }/verify-email?token=${verificationToken}`;
+    const verificationLink = `${process.env.BACKEND_URL || "https://hrms-backend-5wau.onrender.com"}/api/auth/verify-email?token=${verificationToken}`;
+
     const emailSent = await sendEmail(
       email,
       "Verify Your Intern Portal Account",

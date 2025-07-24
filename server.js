@@ -3018,7 +3018,7 @@ app.post(
   }
 );
 
-//InternShip
+//InternShip - PostgreSQL Compatible Version
 
 // File upload configuration
 const storage = multer.diskStorage({
@@ -3053,7 +3053,6 @@ const upload = multer({
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 
-
 // Helper function to calculate days remaining
 const calculateDaysRemaining = (endDate) => {
   const today = new Date();
@@ -3071,30 +3070,30 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const internId = req.user.id;
 
     // Get intern basic info
-    const [internInfo] = await db.query(
-      'SELECT full_name, email, status, progress, start_date, end_date FROM interns WHERE id = ?',
+    const internResult = await db.query(
+      'SELECT full_name, email, status, progress, start_date, end_date FROM interns WHERE id = $1',
       [internId]
     );
 
-    if (internInfo.length === 0) {
+    if (internResult.rows.length === 0) {
       return res.status(404).json({ message: 'Intern not found' });
     }
 
-    const intern = internInfo[0];
+    const intern = internResult.rows[0];
 
     // Get tasks statistics
-    const [taskStats] = await db.query(
+    const taskStatsResult = await db.query(
       `SELECT 
         COUNT(*) as total_tasks,
         SUM(CASE WHEN status IN ('completed', 'submitted') THEN 1 ELSE 0 END) as completed_tasks,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks
-      FROM tasks WHERE assigned_to = ?`,
+      FROM tasks WHERE assigned_to = $1`,
       [internId]
     );
 
     // Get next upcoming deadline
-    const [upcomingTask] = await db.query(
-      'SELECT title, due_date FROM tasks WHERE assigned_to = ? AND due_date > NOW() ORDER BY due_date ASC LIMIT 1',
+    const upcomingTaskResult = await db.query(
+      'SELECT title, due_date FROM tasks WHERE assigned_to = $1 AND due_date > CURRENT_TIMESTAMP ORDER BY due_date ASC LIMIT 1',
       [internId]
     );
 
@@ -3102,13 +3101,14 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const daysRemaining = intern.end_date ? calculateDaysRemaining(intern.end_date) : 0;
 
     // Calculate certificate progress based on completed tasks
-    const certificateProgress = taskStats[0].total_tasks > 0 
-      ? Math.round((taskStats[0].completed_tasks / taskStats[0].total_tasks) * 100)
+    const taskStats = taskStatsResult.rows[0];
+    const certificateProgress = parseInt(taskStats.total_tasks) > 0 
+      ? Math.round((parseInt(taskStats.completed_tasks) / parseInt(taskStats.total_tasks)) * 100)
       : 0;
 
     // Format upcoming deadline
-    const upcomingDeadline = upcomingTask.length > 0 
-      ? `${new Date(upcomingTask[0].due_date).toLocaleDateString()} – ${upcomingTask[0].title}`
+    const upcomingDeadline = upcomingTaskResult.rows.length > 0 
+      ? `${new Date(upcomingTaskResult.rows[0].due_date).toLocaleDateString()} – ${upcomingTaskResult.rows[0].title}`
       : 'No upcoming deadlines';
 
     res.json({
@@ -3116,8 +3116,8 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
         name: intern.full_name,
         profilePhoto: null,
         trainingEndDate: intern.end_date ? new Date(intern.end_date).toLocaleDateString() : 'Not set',
-        tasksCompleted: taskStats[0].completed_tasks,
-        totalTasks: taskStats[0].total_tasks,
+        tasksCompleted: parseInt(taskStats.completed_tasks),
+        totalTasks: parseInt(taskStats.total_tasks),
         daysRemaining,
         upcomingDeadline,
         certificateProgress
@@ -3136,17 +3136,17 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
   try {
     const internId = req.user.id;
 
-    const [tasks] = await db.query(
+    const tasksResult = await db.query(
       `SELECT 
         id, title, description, status, due_date, created_at, 
         submission_text, submission_file_path, feedback, grade
       FROM tasks 
-      WHERE assigned_to = ? 
+      WHERE assigned_to = $1 
       ORDER BY due_date ASC`,
       [internId]
     );
 
-    const formattedTasks = tasks.map(task => ({
+    const formattedTasks = tasksResult.rows.map(task => ({
       id: task.id,
       title: task.title,
       description: task.description,
@@ -3172,16 +3172,16 @@ app.get('/api/tasks/:id', authenticateToken, async (req, res) => {
     const taskId = req.params.id;
     const internId = req.user.id;
 
-    const [tasks] = await db.query(
-      'SELECT * FROM tasks WHERE id = ? AND assigned_to = ?',
+    const tasksResult = await db.query(
+      'SELECT * FROM tasks WHERE id = $1 AND assigned_to = $2',
       [taskId, internId]
     );
 
-    if (tasks.length === 0) {
+    if (tasksResult.rows.length === 0) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    res.json(tasks[0]);
+    res.json(tasksResult.rows[0]);
   } catch (error) {
     console.error('Task details error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -3196,26 +3196,28 @@ app.post('/api/tasks/:id/submit', authenticateToken, upload.single('file'), asyn
     const { submissionText } = req.body;
 
     // Check if task exists and belongs to intern
-    const [tasks] = await db.query(
-      'SELECT id FROM tasks WHERE id = ? AND assigned_to = ?',
+    const tasksResult = await db.query(
+      'SELECT id FROM tasks WHERE id = $1 AND assigned_to = $2',
       [taskId, internId]
     );
 
-    if (tasks.length === 0) {
+    if (tasksResult.rows.length === 0) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Prepare update query
-    let updateQuery = 'UPDATE tasks SET submission_text = ?, status = "submitted", updated_at = NOW()';
-    let updateParams = [submissionText];
+    let updateQuery = 'UPDATE tasks SET submission_text = $1, status = $2, updated_at = CURRENT_TIMESTAMP';
+    let updateParams = [submissionText, 'submitted'];
+    let paramIndex = 3;
 
     // Add file path if file was uploaded
     if (req.file) {
-      updateQuery += ', submission_file_path = ?';
+      updateQuery += `, submission_file_path = $${paramIndex}`;
       updateParams.push(req.file.path);
+      paramIndex++;
     }
 
-    updateQuery += ' WHERE id = ? AND assigned_to = ?';
+    updateQuery += ` WHERE id = $${paramIndex} AND assigned_to = $${paramIndex + 1}`;
     updateParams.push(taskId, internId);
 
     await db.query(updateQuery, updateParams);
@@ -3255,16 +3257,16 @@ app.get('/api/certificate', authenticateToken, async (req, res) => {
   try {
     const internId = req.user.id;
 
-    const [certificates] = await db.query(
-      'SELECT * FROM certificates WHERE intern_id = ?',
+    const certificatesResult = await db.query(
+      'SELECT * FROM certificates WHERE intern_id = $1',
       [internId]
     );
 
-    if (certificates.length === 0) {
+    if (certificatesResult.rows.length === 0) {
       return res.status(404).json({ message: 'No certificate found' });
     }
 
-    res.json(certificates[0]);
+    res.json(certificatesResult.rows[0]);
   } catch (error) {
     console.error('Certificate error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -3276,16 +3278,16 @@ app.get('/api/certificate/download', authenticateToken, async (req, res) => {
   try {
     const internId = req.user.id;
 
-    const [certificates] = await db.query(
-      'SELECT certificate_file_path FROM certificates WHERE intern_id = ? AND status = "issued"',
-      [internId]
+    const certificatesResult = await db.query(
+      'SELECT certificate_file_path FROM certificates WHERE intern_id = $1 AND status = $2',
+      [internId, 'issued']
     );
 
-    if (certificates.length === 0) {
+    if (certificatesResult.rows.length === 0) {
       return res.status(404).json({ message: 'Certificate not available for download' });
     }
 
-    const filePath = certificates[0].certificate_file_path;
+    const filePath = certificatesResult.rows[0].certificate_file_path;
     if (fs.existsSync(filePath)) {
       res.download(filePath);
     } else {
@@ -3304,16 +3306,16 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     const internId = req.user.id;
 
-    const [profile] = await db.query(
-      'SELECT employee_id, full_name, email, phone, address, start_date, end_date, status, progress, batch FROM interns WHERE id = ?',
+    const profileResult = await db.query(
+      'SELECT employee_id, full_name, email, phone, address, start_date, end_date, status, progress, batch FROM interns WHERE id = $1',
       [internId]
     );
 
-    if (profile.length === 0) {
+    if (profileResult.rows.length === 0) {
       return res.status(404).json({ message: 'Profile not found' });
     }
 
-    res.json(profile[0]);
+    res.json(profileResult.rows[0]);
   } catch (error) {
     console.error('Profile error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -3327,7 +3329,7 @@ app.put('/api/profile', authenticateToken, async (req, res) => {
     const { full_name, phone, address } = req.body;
 
     await db.query(
-      'UPDATE interns SET full_name = ?, phone = ?, address = ?, updated_at = NOW() WHERE id = ?',
+      'UPDATE interns SET full_name = $1, phone = $2, address = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
       [full_name, phone, address, internId]
     );
 
@@ -3346,16 +3348,16 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
     const internId = req.user.id;
 
     // Get intern's start and end dates
-    const [internInfo] = await db.query(
-      'SELECT start_date, end_date FROM interns WHERE id = ?',
+    const internInfoResult = await db.query(
+      'SELECT start_date, end_date FROM interns WHERE id = $1',
       [internId]
     );
 
-    if (internInfo.length === 0) {
+    if (internInfoResult.rows.length === 0) {
       return res.status(404).json({ message: 'Intern not found' });
     }
 
-    const { start_date, end_date } = internInfo[0];
+    const { start_date, end_date } = internInfoResult.rows[0];
 
     // Calculate timeline steps based on start and end dates
     const timelineSteps = [

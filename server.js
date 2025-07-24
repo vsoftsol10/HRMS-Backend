@@ -40,12 +40,11 @@ const corsOptions = {
   origin: (origin, callback) => {
     console.log("Incoming Origin:", origin);
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
+      callback(null, true); // allow requests without origin or from allowedOrigins
     } else {
-      callback(new Error("Not allowed by CORS"));
+      callback(new Error("Not allowed by CORS: " + origin));
     }
   },
-    origin: true, // Allow all origins for now
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -60,9 +59,12 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+
 //Middleware
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // preflight requests
+console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
+
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));

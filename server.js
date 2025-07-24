@@ -2481,7 +2481,7 @@ app.use(express.json({ limit: "10mb" }));
 // Rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per IP
+  max: 15, // 5 attempts per IP
   message: {
     error: "Too many authentication attempts, please try again later.",
   },

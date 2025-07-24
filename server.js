@@ -2481,7 +2481,7 @@ app.use(express.json({ limit: "10mb" }));
 // Rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 5 attempts per IP
+  max: 5, // 5 attempts per IP
   message: {
     error: "Too many authentication attempts, please try again later.",
   },
@@ -2627,8 +2627,9 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     );
 
     // ✅ Send verification email
-    const verificationLink = `${process.env.BACKEND_URL || "https://hrms-backend-5wau.onrender.com"}/api/auth/verify-email?token=${verificationToken}`;
-
+    const verificationLink = `${
+      process.env.FRONTEND_URL || "https://portal.thevsoft.com"
+    }/verify-email?token=${verificationToken}`;
     const emailSent = await sendEmail(
       email,
       "Verify Your Intern Portal Account",

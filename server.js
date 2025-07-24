@@ -2739,7 +2739,6 @@ app.post("/api/auth/login", validateSignIn, async (req, res) => {
       token,
       user: {
         id: user.id,
-        employeeId: user.employee_id,
         fullName: user.full_name,
         email: user.email,
       },

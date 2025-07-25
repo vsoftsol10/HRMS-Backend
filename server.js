@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Pool } = require('pg'); // ✅ Import Pool from pg
+const { Pool } = require('pg');
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -17,18 +17,13 @@ const db = require('./src/config/database'); // PostgreSQL connection
 const PORT = process.env.PORT || 8080;
 const app = express();
 
+// ✅ CRITICAL: Trust proxy for deployment platforms (Render, Heroku, etc.)
+app.set('trust proxy', 1);
 
+// ✅ Remove duplicate Pool - use the one from your database config
+// const pool = new Pool({...}) // ❌ REMOVE THIS - you already have 'db'
 
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Your Supabase connection string
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-
-// Optimized CORS Configuration - Production Ready
+// ✅ Optimized CORS Configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -65,34 +60,32 @@ const corsOptions = {
   preflightContinue: false
 };
 
-//Middleware
+// ✅ Middleware in correct order
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-
-// Explicit preflight handler - THIS IS CRUCIAL
-app.options('*', (req, res) => {
-  console.log("🚀 Preflight OPTIONS request received for:", req.url);
-  console.log("🔍 Origin:", req.headers.origin);
-  console.log("🔍 Access-Control-Request-Method:", req.headers['access-control-request-method']);
-  console.log("🔍 Access-Control-Request-Headers:", req.headers['access-control-request-headers']);
-  
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin,X-Requested-With,Content-Type,Accept,Authorization,Cache-Control,X-Access-Token');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '3600');
-  
-  console.log("✅ Preflight response sent");
-  res.sendStatus(200);
-});
-
-console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
-console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
-
+// ❌ REMOVE DUPLICATE: app.options('*', cors(corsOptions));
+// ❌ REMOVE MANUAL OPTIONS HANDLER - cors middleware handles this
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 app.use(helmet());
+
+// ✅ Rate limiting configuration
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: {
+    error: "Too many requests from this IP, please try again later."
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: true // Important for deployment platforms
+});
+
+// Apply rate limiting to API routes
+app.use('/api/', apiLimiter);
+
+// ✅ Single console.log statement
+console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
 
 // Debug CORS route
 app.get('/api/cors-debug', (req, res) => {
@@ -105,11 +98,10 @@ app.get('/api/cors-debug', (req, res) => {
   });
 });
 
-//CORS TEST
+// CORS TEST
 app.get('/api/cors-test', (req, res) => {
   res.json({ success: true, message: 'CORS test successful' });
 });
-
 
 // PostgreSQL Test Route
 app.get('/api/test-db', async (req, res) => {
@@ -122,47 +114,58 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Global Error Handler (CORS-specific)
+// ✅ Enhanced Global Error Handler
 app.use((err, req, res, next) => {
-  if (err.message === "Not allowed by CORS") {
+  // Handle CORS errors
+  if (err.message && err.message.includes("CORS: Origin")) {
     return res.status(403).json({
       success: false,
       message: "CORS Error: This origin is not allowed."
     });
   }
-  next(err);
+  
+  // Handle rate limit errors
+  if (err.code === 'ERR_ERL_UNEXPECTED_X_FORWARDED_FOR') {
+    console.warn("Rate limit proxy warning (handled):", err.message);
+    return next();
+  }
+  
+  // Generic error handler
+  console.error("Server Error:", err);
+  res.status(500).json({
+    success: false,
+    message: "Internal server error"
+  });
 });
-
 
 // Create payrolls table if it doesn't exist
 async function initializeDatabase() {
   try {
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS payrolls (
-    id SERIAL PRIMARY KEY,
-    pay_period_start DATE NOT NULL,
-    pay_period_end DATE NOT NULL,
-    pay_date DATE NOT NULL,
-    company_name VARCHAR(255) NOT NULL,
-    company_address TEXT,
-    company_phone VARCHAR(20),
-    company_email VARCHAR(255),
-    employee_name VARCHAR(255) NOT NULL,
-    employee_id VARCHAR(50) NOT NULL UNIQUE,
-    position VARCHAR(255),
-    department VARCHAR(255),
-    employee_email VARCHAR(255),
-    basic_salary DECIMAL(10,2) DEFAULT 0,
-    overtime DECIMAL(10,2) DEFAULT 0,
-    bonus DECIMAL(10,2) DEFAULT 0,
-    allowances DECIMAL(10,2) DEFAULT 0,
-    leave_deduction DECIMAL(10,2) DEFAULT 0,
-    lop_deduction DECIMAL(10,2) DEFAULT 0,
-    late_deduction DECIMAL(10,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-
+        id SERIAL PRIMARY KEY,
+        pay_period_start DATE NOT NULL,
+        pay_period_end DATE NOT NULL,
+        pay_date DATE NOT NULL,
+        company_name VARCHAR(255) NOT NULL,
+        company_address TEXT,
+        company_phone VARCHAR(20),
+        company_email VARCHAR(255),
+        employee_name VARCHAR(255) NOT NULL,
+        employee_id VARCHAR(50) NOT NULL UNIQUE,
+        position VARCHAR(255),
+        department VARCHAR(255),
+        employee_email VARCHAR(255),
+        basic_salary DECIMAL(10,2) DEFAULT 0,
+        overtime DECIMAL(10,2) DEFAULT 0,
+        bonus DECIMAL(10,2) DEFAULT 0,
+        allowances DECIMAL(10,2) DEFAULT 0,
+        leave_deduction DECIMAL(10,2) DEFAULT 0,
+        lop_deduction DECIMAL(10,2) DEFAULT 0,
+        late_deduction DECIMAL(10,2) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
     `;
 
     await db.query(createTableQuery);
@@ -175,12 +178,6 @@ async function initializeDatabase() {
 // Initialize database
 initializeDatabase();
 
-
-
-
-// Add this route handler before your other routes or after your existing routes
-// This should go before app.listen()
-
 // Root route - API Status endpoint
 app.get("/", (req, res) => {
   res.json({
@@ -188,6 +185,7 @@ app.get("/", (req, res) => {
     status: "active",
     timestamp: new Date().toISOString(),
     version: "1.0.0",
+    environment: process.env.NODE_ENV || 'development',
     endpoints: [
       "GET /api/payroll - Fetch all payrolls",
       "GET /api/payroll/:id - Fetch single payroll",
@@ -216,6 +214,8 @@ app.get("/health", (req, res) => {
     status: "healthy",
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
+    memory: process.memoryUsage(),
+    env: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -228,6 +228,8 @@ app.get("/api", (req, res) => {
     base_url: req.protocol + "://" + req.get("host"),
   });
 });
+
+
 
 // GET API - Fetch all payrolls
 app.get("/api/payroll", async (req, res) => {
@@ -486,10 +488,6 @@ app.delete("/api/payroll/:id", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on http://localhost:${PORT}`);
-  console.log(`📊 Make sure your PostgreSQL database is running!`);
-});
 
 //Authentication
 
@@ -3443,4 +3441,18 @@ app.use((error, req, res, next) => {
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
+});
+
+// ✅ Start the server
+app.listen(PORT, () => {
+  console.log(`✅ Backend running on http://localhost:${PORT}`);
+  console.log("📊 Make sure your PostgreSQL database is running!");
+});
+
+// ✅ Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Process terminated');
+  });
 });

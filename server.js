@@ -28,7 +28,7 @@ const pool = new Pool({
 });
 
 
-// CORS Configuration
+// Optimized CORS Configuration - Production Ready
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -37,12 +37,17 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
-  origin: (origin, callback) => {
-    console.log("Incoming Origin:", origin);
+  origin: function (origin, callback) {
+    // Only log in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Origin:", origin);
+    }
+    
+    // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true); // allow requests without origin or from allowedOrigins
+      callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS: " + origin));
+      callback(new Error(`CORS: Origin ${origin} not allowed`));
     }
   },
   credentials: true,
@@ -56,19 +61,49 @@ const corsOptions = {
     'Cache-Control',
     'X-Access-Token'
   ],
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
-
 
 //Middleware
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // preflight requests
+app.options('*', cors(corsOptions));
+
+// Explicit preflight handler - THIS IS CRUCIAL
+app.options('*', (req, res) => {
+  console.log("🚀 Preflight OPTIONS request received for:", req.url);
+  console.log("🔍 Origin:", req.headers.origin);
+  console.log("🔍 Access-Control-Request-Method:", req.headers['access-control-request-method']);
+  console.log("🔍 Access-Control-Request-Headers:", req.headers['access-control-request-headers']);
+  
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS,PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin,X-Requested-With,Content-Type,Accept,Authorization,Cache-Control,X-Access-Token');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '3600');
+  
+  console.log("✅ Preflight response sent");
+  res.sendStatus(200);
+});
+
+console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
 console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
 
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 app.use(helmet());
+
+// Debug CORS route
+app.get('/api/cors-debug', (req, res) => {
+  res.json({
+    origin: req.headers.origin,
+    headers: req.headers,
+    method: req.method,
+    url: req.url,
+    allowedOrigins: allowedOrigins
+  });
+});
 
 //CORS TEST
 app.get('/api/cors-test', (req, res) => {

@@ -3113,6 +3113,8 @@ const calculateDaysRemaining = (endDate) => {
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
     console.log('🔍 Dashboard route accessed by user:', req.user.id);
+    console.log("✅ /api/dashboard route hit");
+
     
     const internId = req.user.id;
 
@@ -3482,6 +3484,12 @@ app.use((error, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
+
+// This should be AFTER all /api routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
+});
+
 
 // ✅ Start the server
 app.listen(PORT, () => {

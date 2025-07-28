@@ -97,6 +97,12 @@ const authenticateToken = async (req, res, next) => {
   }
 
   try {
+    // 🔧 Allow mock token in development
+    if (token === "mock-token-for-demo" && process.env.NODE_ENV !== "production") {
+      req.user = { id: 1, name: "Test User" }; // Mock user data
+      return next();
+    }
+
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET || "your-secret-key"

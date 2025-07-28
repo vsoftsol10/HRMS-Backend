@@ -3482,13 +3482,34 @@ app.use((error, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
-// 404 handler
+// 404 handler - make it more specific
 app.use((req, res) => {
+  // For API requests, return JSON
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ 
+      success: false,
+      message: 'API endpoint not found',
+      path: req.path,
+      method: req.method
+    });
+  }
+  
+  // For other requests, you could redirect to frontend or return JSON
   res.status(404).json({ message: 'Route not found' });
 });
 
-// This should be AFTER all /api routes
+// Replace the catch-all route with this:
 app.get('*', (req, res) => {
+  // If it's an API request, return JSON error instead of HTML
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ 
+      success: false,
+      message: 'API endpoint not found',
+      path: req.path 
+    });
+  }
+  
+  // For non-API routes, serve the React app
   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
 

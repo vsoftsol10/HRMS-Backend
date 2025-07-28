@@ -3102,67 +3102,49 @@ const calculateDaysRemaining = (endDate) => {
 // Get dashboard data for authenticated intern
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
+    console.log('🔍 Dashboard route accessed by user:', req.user.id);
+    
     const internId = req.user.id;
 
-    // Get intern basic info
+    // Test database connection first
+    await db.query('SELECT 1');
+    console.log('✅ Database connection OK');
+
+    // Get intern basic info with detailed logging
+    console.log('📋 Querying intern data...');
     const internResult = await db.query(
       'SELECT full_name, email, status, progress, start_date, end_date FROM interns WHERE id = $1',
       [internId]
     );
 
+    console.log('📊 Intern query result:', internResult.rows);
+
     if (internResult.rows.length === 0) {
+      console.log('❌ No intern found with ID:', internId);
       return res.status(404).json({ message: 'Intern not found' });
     }
 
     const intern = internResult.rows[0];
+    console.log('👤 Found intern:', intern.full_name);
 
-    // Get tasks statistics
-    const taskStatsResult = await db.query(
-      `SELECT 
-        COUNT(*) as total_tasks,
-        SUM(CASE WHEN status IN ('completed', 'submitted') THEN 1 ELSE 0 END) as completed_tasks,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks
-      FROM tasks WHERE assigned_to = $1`,
-      [internId]
-    );
+    // Continue with rest of the logic...
+    // ... rest of your existing dashboard code ...
 
-    // Get next upcoming deadline
-    const upcomingTaskResult = await db.query(
-      'SELECT title, due_date FROM tasks WHERE assigned_to = $1 AND due_date > CURRENT_TIMESTAMP ORDER BY due_date ASC LIMIT 1',
-      [internId]
-    );
-
-    // Calculate days remaining
-    const daysRemaining = intern.end_date ? calculateDaysRemaining(intern.end_date) : 0;
-
-    // Calculate certificate progress based on completed tasks
-    const taskStats = taskStatsResult.rows[0];
-    const certificateProgress = parseInt(taskStats.total_tasks) > 0 
-      ? Math.round((parseInt(taskStats.completed_tasks) / parseInt(taskStats.total_tasks)) * 100)
-      : 0;
-
-    // Format upcoming deadline
-    const upcomingDeadline = upcomingTaskResult.rows.length > 0 
-      ? `${new Date(upcomingTaskResult.rows[0].due_date).toLocaleDateString()} – ${upcomingTaskResult.rows[0].title}`
-      : 'No upcoming deadlines';
-
-    res.json({
-      internData: {
-        name: intern.full_name,
-        profilePhoto: null,
-        trainingEndDate: intern.end_date ? new Date(intern.end_date).toLocaleDateString() : 'Not set',
-        tasksCompleted: parseInt(taskStats.completed_tasks),
-        totalTasks: parseInt(taskStats.total_tasks),
-        daysRemaining,
-        upcomingDeadline,
-        certificateProgress
-      }
-    });
   } catch (error) {
-    console.error('Dashboard error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('❌ Dashboard error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack
+    });
+    
+    res.status(500).json({ 
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Database error'
+    });
   }
 });
+
 
 // ============= TASK ROUTES =============
 

@@ -114,6 +114,16 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// Add this route for immediate testing
+app.get('/api/test', (req, res) => {
+  console.log('✅ Test route accessed successfully');
+  res.json({ 
+    message: 'Backend server is working!', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // ✅ Enhanced Global Error Handler
 app.use((err, req, res, next) => {
   // Handle CORS errors
@@ -3127,8 +3137,56 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     const intern = internResult.rows[0];
     console.log('👤 Found intern:', intern.full_name);
 
-    // Continue with rest of the logic...
-    // ... rest of your existing dashboard code ...
+    // Get task statistics
+    const tasksResult = await db.query(
+      `SELECT 
+        COUNT(*) as total_tasks,
+        COUNT(CASE WHEN status = 'completed' OR status = 'submitted' THEN 1 END) as completed_tasks
+      FROM tasks 
+      WHERE assigned_to = $1`,
+      [internId]
+    );
+
+    const taskStats = tasksResult.rows[0] || { total_tasks: 0, completed_tasks: 0 };
+
+    // Calculate days remaining
+    const daysRemaining = calculateDaysRemaining(intern.end_date);
+
+    // Get upcoming deadline
+    const upcomingTaskResult = await db.query(
+      `SELECT title, due_date 
+      FROM tasks 
+      WHERE assigned_to = $1 AND status IN ('pending', 'in_progress') 
+      ORDER BY due_date ASC 
+      LIMIT 1`,
+      [internId]
+    );
+
+    const upcomingDeadline = upcomingTaskResult.rows.length > 0 
+      ? `${upcomingTaskResult.rows[0].title} - ${new Date(upcomingTaskResult.rows[0].due_date).toLocaleDateString()}`
+      : "No upcoming deadlines";
+
+    // Calculate certificate progress (based on completed tasks)
+    const totalTasks = parseInt(taskStats.total_tasks) || 1;
+    const completedTasks = parseInt(taskStats.completed_tasks) || 0;
+    const certificateProgress = Math.round((completedTasks / totalTasks) * 100);
+
+    // Prepare response data
+    const dashboardData = {
+      name: intern.full_name,
+      email: intern.email,
+      status: intern.status,
+      progress: intern.progress,
+      trainingEndDate: intern.end_date ? new Date(intern.end_date).toISOString().split('T')[0] : null,
+      tasksCompleted: completedTasks,
+      totalTasks: parseInt(taskStats.total_tasks),
+      daysRemaining: daysRemaining,
+      upcomingDeadline: upcomingDeadline,
+      certificateProgress: certificateProgress
+    };
+
+    console.log('✅ Dashboard data prepared:', dashboardData);
+    res.json(dashboardData);
 
   } catch (error) {
     console.error('❌ Dashboard error details:', {

@@ -3323,7 +3323,7 @@ app.get('/api/announcements', authenticateToken, async (req, res) => {
     // You can create an announcements table and fetch from there
     const announcements = [
       "Project submission deadline extended to July 5.",
-      "New training materials available in the resources section.",
+      "New training materials available in the resources section.", 
       "Monthly intern meet-up scheduled for July 20th.",
       "Please complete your mid-term evaluation by the end of this week."
     ];
@@ -3406,6 +3406,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
 
 // Update intern profile
 app.put('/api/profile', authenticateToken, async (req, res) => {

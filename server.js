@@ -87,6 +87,27 @@ app.use('/api/', apiLimiter);
 // ✅ Single console.log statement
 console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
 
+// Middleware to verify JWT
+const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ error: "Access token required" });
+  }
+
+  try {
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "your-secret-key"
+    );
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: "Invalid or expired token" });
+  }
+};
+
 // Debug CORS route
 app.get('/api/cors-debug', (req, res) => {
   res.json({
@@ -2614,26 +2635,7 @@ const validateSignIn = [
   body("password").notEmpty().withMessage("Password is required"),
 ];
 
-// Middleware to verify JWT
-const authenticateToken = async (req, res, next) => {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
 
-  if (!token) {
-    return res.status(401).json({ error: "Access token required" });
-  }
-
-  try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key"
-    );
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(403).json({ error: "Invalid or expired token" });
-  }
-};
 
 // Routes
 

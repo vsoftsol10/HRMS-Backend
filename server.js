@@ -90,27 +90,31 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
+  console.log("🔐 Received Authorization header:", authHeader);
+  console.log("🔐 Extracted token:", token);
+
   if (!token) {
+    console.warn("❌ No token provided");
     return res.status(401).json({ error: "Access token required" });
   }
 
   try {
-    // 🔧 Allow mock token in development
     if (token === "mock-token-for-demo" && process.env.NODE_ENV !== "production") {
-      req.user = { id: 1, name: "Test User" }; // Mock user data
+      console.log("✅ Using mock token for development");
+      req.user = { id: 1, name: "Test User" };
       return next();
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "your-secret-key");
+    console.log("✅ Token verified successfully:", decoded);
     req.user = decoded;
     next();
   } catch (error) {
+    console.error("❌ Token verification failed:", error.message);
     return res.status(403).json({ error: "Invalid or expired token" });
   }
 };
+
 
 // Debug CORS route
 app.get('/api/cors-debug', (req, res) => {

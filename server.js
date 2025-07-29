@@ -20,8 +20,6 @@ const app = express();
 // ✅ CRITICAL: Trust proxy for deployment platforms (Render, Heroku, etc.)
 app.set('trust proxy', 1);
 
-// ✅ Remove duplicate Pool - use the one from your database config
-// const pool = new Pool({...}) // ❌ REMOVE THIS - you already have 'db'
 
 // ✅ Optimized CORS Configuration
 const allowedOrigins = [
@@ -544,7 +542,7 @@ app.post("/api/authenticate", async (req, res) => {
     console.log("Authenticating:", employeeCode, password);
 
     // ✅ Use $1 parameter placeholder for PostgreSQL
-    const result = await pool.query(
+    const result = await db.query(
       "SELECT * FROM payrolls WHERE employee_id = $1 LIMIT 1",
       [employeeCode]
     );
@@ -689,7 +687,7 @@ app.get("/api/employees", async (req, res) => {
       ORDER BY e.created_at DESC
     `;
 
-    const result = await pool.query(query);
+    const result = await db.query(query);
 
     // Ensure result.rows is an array
     if (!Array.isArray(result.rows)) {
@@ -770,7 +768,7 @@ app.get("/api/employees/:id", async (req, res) => {
       WHERE e.id = $1
     `;
 
-    const result = await pool.query(query, [id]);
+    const result = await db.query(query, [id]);
     const rows = result.rows;
 
     if (rows.length === 0) {
@@ -909,7 +907,7 @@ app.post("/api/employees", async (req, res) => {
       notes,
     ];
 
-    const result = await pool.query(insertQuery, values);
+    const result = await db.query(insertQuery, values);
 
     res.status(201).json({
       message: "Employee created successfully",
@@ -975,14 +973,14 @@ app.put("/api/employees/:id", async (req, res) => {
 
     // Validation
     if (departmentId) {
-      const deptCheck = await pool.query("SELECT id FROM departments WHERE id = $1", [departmentId]);
+      const deptCheck = await db.query("SELECT id FROM departments WHERE id = $1", [departmentId]);
       if (deptCheck.rows.length === 0) {
         return res.status(400).json({ message: "Invalid department ID" });
       }
     }
 
     if (positionId) {
-      const posCheck = await pool.query("SELECT id FROM positions WHERE id = $1", [positionId]);
+      const posCheck = await db.query("SELECT id FROM positions WHERE id = $1", [positionId]);
       if (posCheck.rows.length === 0) {
         return res.status(400).json({ message: "Invalid position ID" });
       }
@@ -1036,7 +1034,7 @@ app.put("/api/employees/:id", async (req, res) => {
       id,
     ];
 
-    const result = await pool.query(updateQuery, values);
+    const result = await db.query(updateQuery, values);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -1057,7 +1055,7 @@ app.delete("/api/employees/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
 
-    const result = await pool.query("DELETE FROM employees WHERE id = $1", [id]);
+    const result = await db.query("DELETE FROM employees WHERE id = $1", [id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });
@@ -1075,7 +1073,7 @@ app.delete("/api/employees/:id", async (req, res) => {
 // GET API - Fetch departments for dropdown
 app.get("/api/departments", async (req, res) => {
   try {
-    const result = await pool.query(
+    const result = await db.query(
       "SELECT id, name FROM departments ORDER BY name"
     );
     res.json(result.rows); // Use result.rows for PostgreSQL
@@ -1090,7 +1088,7 @@ app.get("/api/departments", async (req, res) => {
 // GET API - Fetch positions for dropdown
 app.get("/api/positions", async (req, res) => {
   try {
-    const result = await pool.query(
+    const result = await db.query(
       "SELECT id, title FROM positions ORDER BY title"
     );
     res.json(result.rows); // Use result.rows for PostgreSQL
@@ -1111,7 +1109,7 @@ app.get("/api/managers", async (req, res) => {
       WHERE status = 'active' 
       ORDER BY first_name, last_name
     `;
-    const result = await pool.query(query);
+    const result = await db.query(query);
     res.json(result.rows); // Use result.rows for PostgreSQL
   } catch (error) {
     console.error("Error fetching managers:", error);
@@ -1142,7 +1140,7 @@ app.get("/api/profile/:employeeCode", async (req, res) => {
       WHERE e.employee_code = $1 AND e.status != 'terminated'
     `;
 
-    const result = await pool.query(query, [employeeCode]);
+    const result = await db.query(query, [employeeCode]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: "Employee profile not found" });
@@ -1261,7 +1259,7 @@ app.put("/api/profile/:employeeCode", async (req, res) => {
       employeeCode,
     ];
 
-    const result = await pool.query(updateQuery, values);
+    const result = await db.query(updateQuery, values);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: "Employee not found" });

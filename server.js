@@ -90,27 +90,32 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
-  console.log("🔐 Received Authorization header:", authHeader);
-  console.log("🔐 Extracted token:", token);
-
   if (!token) {
-    console.warn("❌ No token provided");
     return res.status(401).json({ error: "Access token required" });
   }
 
   try {
+    // 🔧 Allow mock token in development
     if (token === "mock-token-for-demo" && process.env.NODE_ENV !== "production") {
-      console.log("✅ Using mock token for development");
-      req.user = { id: 1, name: "Test User" };
+      req.user = { id: 1, userId: 1, name: "Test User" }; // Mock user data
       return next();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "your-secret-key");
-    console.log("✅ Token verified successfully:", decoded);
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || "your-secret-key"
+    );
+    
+    // ✅ FIX: Handle both userId and id formats
+    if (decoded.userId && !decoded.id) {
+      decoded.id = decoded.userId;
+    }
+    
     req.user = decoded;
+    console.log('✅ Token decoded successfully:', { id: req.user.id, email: req.user.email });
     next();
   } catch (error) {
-    console.error("❌ Token verification failed:", error.message);
+    console.error('❌ JWT verification failed:', error.message);
     return res.status(403).json({ error: "Invalid or expired token" });
   }
 };
@@ -3122,27 +3127,60 @@ const calculateDaysRemaining = (endDate) => {
 // Get dashboard data for authenticated intern
 app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
-    console.log('🔍 Dashboard route accessed by user:', req.user.id);
-    console.log("✅ /api/dashboard route hit");
-
+    console.log('🔍 Dashboard route accessed by user:', req.user);
     
     const internId = req.user.id;
+    
+    if (!internId) {
+      console.error('❌ No user ID found in token');
+      return res.status(400).json({ 
+        message: 'Invalid token: missing user ID',
+        debug: { user: req.user }
+      });
+    }
 
     // Test database connection first
-    await db.query('SELECT 1');
-    console.log('✅ Database connection OK');
+    try {
+      await db.query('SELECT 1');
+      console.log('✅ Database connection OK');
+    } catch (dbError) {
+      console.error('❌ Database connection failed:', dbError);
+      return res.status(500).json({ 
+        message: 'Database connection failed',
+        error: process.env.NODE_ENV === 'development' ? dbError.message : 'Database error'
+      });
+    }
 
     // Get intern basic info with detailed logging
-    console.log('📋 Querying intern data...');
+    console.log('📋 Querying intern data for ID:', internId);
     const internResult = await db.query(
       'SELECT full_name, email, status, progress, start_date, end_date FROM interns WHERE id = $1',
       [internId]
     );
 
-    console.log('📊 Intern query result:', internResult.rows);
+    console.log('📊 Intern query result rows:', internResult.rows.length);
 
     if (internResult.rows.length === 0) {
       console.log('❌ No intern found with ID:', internId);
+      
+      // 🔧 Development fallback: Return mock data
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔧 Returning mock data for development');
+        return res.json({
+          name: "Test Intern (Mock Data)",
+          email: req.user.email || "test@example.com",
+          status: "active",
+          progress: 60,
+          trainingEndDate: "2025-08-25",
+          tasksCompleted: 3,
+          totalTasks: 5,
+          daysRemaining: 45,
+          upcomingDeadline: "Project Review - Aug 1",
+          certificateProgress: 60,
+          _mock: true
+        });
+      }
+      
       return res.status(404).json({ message: 'Intern not found' });
     }
 
@@ -3198,6 +3236,9 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
     };
 
     console.log('✅ Dashboard data prepared:', dashboardData);
+    
+    // ✅ CRITICAL: Ensure we return JSON with proper headers
+    res.setHeader('Content-Type', 'application/json');
     res.json(dashboardData);
 
   } catch (error) {
@@ -3205,12 +3246,15 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
       message: error.message,
       code: error.code,
       detail: error.detail,
-      stack: error.stack
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
     
+    // ✅ CRITICAL: Always return JSON
+    res.setHeader('Content-Type', 'application/json');
     res.status(500).json({ 
       message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Database error'
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Database error',
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -3486,25 +3530,43 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
 // ============= ERROR HANDLING =============
 
 // Global error handler
-app.use((error, req, res, next) => {
-  console.error('Global error:', error);
-  res.status(500).json({ message: 'Something went wrong!' });
+app.use((err, req, res, next) => {
+  console.error('❌ Global error handler:', err);
+  
+  // Always return JSON for API routes
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  next(err);
 });
 
 // 404 handler - make it more specific
-app.use((req, res) => {
-  // For API requests, return JSON
+app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) {
+    res.setHeader('Content-Type', 'application/json');
     return res.status(404).json({ 
       success: false,
       message: 'API endpoint not found',
       path: req.path,
-      method: req.method
+      method: req.method,
+      timestamp: new Date().toISOString()
     });
   }
-  
-  // For other requests, you could redirect to frontend or return JSON
-  res.status(404).json({ message: 'Route not found' });
+  next();
+});
+
+app.get('/api/debug/token', authenticateToken, (req, res) => {
+  res.json({
+    message: 'Token is valid',
+    user: req.user,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Replace the catch-all route with this:

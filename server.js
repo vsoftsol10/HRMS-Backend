@@ -13,6 +13,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('./src/config/database'); // PostgreSQL connection
+const adminRoutes = require('./src/routes/adminIntern')
 
 const PORT = process.env.PORT || 8080;
 const app = express();
@@ -118,7 +119,6 @@ const authenticateToken = async (req, res, next) => {
     return res.status(403).json({ error: "Invalid or expired token" });
   }
 };
-
 
 // Debug CORS route
 app.get('/api/cors-debug', (req, res) => {
@@ -3578,6 +3578,10 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
   }
 });
 
+// Admin Intern Dashboard Page
+
+app.use('/api', adminRoutes);
+
 // ============= ERROR HANDLING =============
 
 
@@ -3617,8 +3621,28 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
+
+
+
 console.log('✅ Error handlers registered');
 console.log('🚀 Server setup complete - all routes should now work');
+
+// Debug: Log all registered routes
+app._router.stack.forEach((middleware) => {
+  if (middleware.route) {
+    const method = Object.keys(middleware.route.methods)[0].toUpperCase();
+    console.log(`✅ ROUTE: [${method}] ${middleware.route.path}`);
+  } else if (middleware.name === 'router') {
+    middleware.handle.stack.forEach((handler) => {
+      const route = handler.route;
+      if (route) {
+        const method = Object.keys(route.methods)[0].toUpperCase();
+        console.log(`✅ ROUTE: [${method}] ${route.path}`);
+      }
+    });
+  }
+});
+
 
 // 404 handler - make it more specific
 app.use((req, res, next) => {
@@ -3653,22 +3677,6 @@ app.get('/api/debug/user', authenticateToken, (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-// // Replace the catch-all route with this:
-// app.get('*', (req, res) => {
-//   // If it's an API request, return JSON error instead of HTML
-//   if (req.path.startsWith('/api/')) {
-//     return res.status(404).json({ 
-//       success: false,
-//       message: 'API endpoint not found',
-//       path: req.path 
-//     });
-//   }
-  
-//   // For non-API routes, serve the React app
-//   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
-// });
-
 
 // ✅ Start the server
 app.listen(PORT, () => {

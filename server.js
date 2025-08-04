@@ -3678,16 +3678,13 @@ app.get('/api/debug/user', authenticateToken, (req, res) => {
   });
 });
 
-// ✅ Start the server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`✅ Backend running on http://localhost:${PORT}`);
   console.log("📊 Make sure your PostgreSQL database is running!");
 });
 
-// ✅ Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
   server.close(() => {
-    console.log('Process terminated');
+    console.log('🛑 Server closed due to SIGTERM');
   });
 });

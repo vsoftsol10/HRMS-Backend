@@ -17,7 +17,7 @@ const batchesController = require('../../controllers/admin/batchController');
 
 
 // Import middleware
-const { authenticateAdmin } = require('../../middleware/auth');
+const { authenticateAdmin } = require('../../middleware/authMiddleware');
 
 const router = express.Router();
 

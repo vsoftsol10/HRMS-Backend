@@ -22,47 +22,49 @@ const app = express();
 app.set('trust proxy', 1);
 
 
-// ✅ Optimized CORS Configuration
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
-  'https://localhost:5173',
   'https://portal.thevsoft.com'
 ];
 
+// 🔥 SIMPLIFIED CORS Configuration - sometimes complex configs fail
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Only log in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log("Origin:", origin);
-    }
+  origin: (origin, callback) => {
+    console.log('🌍 CORS Check - Request from origin:', origin);
     
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin) {
+      console.log('✅ CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS: Origin allowed:', origin);
       callback(null, true);
     } else {
+      console.log('❌ CORS: Origin blocked:', origin);
+      console.log('❌ CORS: Allowed origins are:', allowedOrigins);
       callback(new Error(`CORS: Origin ${origin} not allowed`));
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin',
-    'X-Requested-With',
+    'X-Requested-With', 
     'Content-Type',
     'Accept',
     'Authorization',
     'Cache-Control',
     'X-Access-Token'
   ],
-  optionsSuccessStatus: 200,
-  preflightContinue: false
+  optionsSuccessStatus: 200
 };
 
 // ✅ Middleware in correct order
 app.use(cors(corsOptions));
-// ❌ REMOVE DUPLICATE: app.options('*', cors(corsOptions));
-// ❌ REMOVE MANUAL OPTIONS HANDLER - cors middleware handles this
+
 
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
@@ -129,6 +131,24 @@ app.get('/api/cors-debug', (req, res) => {
     url: req.url,
     allowedOrigins: allowedOrigins
   });
+});
+app.options('*', (req, res) => {
+  console.log('🚀 Preflight OPTIONS request from:', req.headers.origin);
+  
+  const origin = req.headers.origin;
+  if (!origin || allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-Access-Token');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400'); // 24 hours
+    
+    console.log('✅ Preflight response sent with origin:', origin);
+    res.sendStatus(200);
+  } else {
+    console.log('❌ Preflight blocked for origin:', origin);
+    res.sendStatus(403);
+  }
 });
 
 // CORS TEST
@@ -3620,9 +3640,6 @@ app.use((err, req, res, next) => {
   
   next(err);
 });
-
-
-
 
 console.log('✅ Error handlers registered');
 console.log('🚀 Server setup complete - all routes should now work');

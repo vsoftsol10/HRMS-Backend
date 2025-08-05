@@ -21,8 +21,8 @@ const authenticateAdmin = async (req, res, next) => {
     
     // Query database using PostgreSQL syntax (not MySQL)
     const result = await pool.query(
-      'SELECT * FROM admin_users WHERE id = $1 AND is_active = true',
-      [decoded.id]
+      'SELECT * FROM admin_users WHERE id = $1 AND is_active = 1',
+      [admin.id]
     );
 
     if (result.rows.length === 0) {

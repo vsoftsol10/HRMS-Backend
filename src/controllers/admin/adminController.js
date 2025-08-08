@@ -2,37 +2,49 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const pool = require("../../config/database");
 
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_key";
+const JWT_SECRET = process.env.JWT_SECRET || "16e2a858ca097d0ed7e4ce727be4381b180e76642aa3b969a3f0b06313a898c10e2326cfb382d0897c43372d1072ec7a9110b5765bd677abfa05add0da7a0ce9";
 
 // Admin login
 const adminLogin = async (req, res) => {
   try {
+    console.log('🚀 Admin login attempt:', req.body);
+    
     const { username, password } = req.body;
     
-    // ✅ Fixed: Use 'true' instead of '1' for PostgreSQL boolean
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "Username and password are required"
+      });
+    }
+    
+    // ✅ FIXED: Use 'true' instead of '1' for PostgreSQL boolean
     const result = await pool.query(
-      "SELECT * FROM admin_users WHERE username = $1 AND is_active = 1",
+      "SELECT * FROM admin_users WHERE username = $1 AND is_active = true",
       [username]
     );
     
-    console.log("DB result:", result.rows); // 🧠 Check if user is found
-
+    console.log("DB result:", result.rows.length, "users found");
+    
     if (result.rows.length === 0) {
-      return res.status(401).json({ 
+      console.log("❌ No user found with username:", username);
+      return res.status(401).json({
         success: false,
-        error: "Invalid credentials" 
+        error: "Invalid credentials"
       });
     }
 
     const admin = result.rows[0];
+    console.log("✅ User found:", admin.username, "Role:", admin.role);
+    
     const validPassword = await bcrypt.compare(password, admin.password_hash);
-
-    console.log("Password match:", validPassword); // 🧠 Check if bcrypt matched
+    console.log("Password match:", validPassword);
 
     if (!validPassword) {
-      return res.status(401).json({ 
+      console.log("❌ Invalid password for user:", username);
+      return res.status(401).json({
         success: false,
-        error: "Invalid credentials" 
+        error: "Invalid credentials"
       });
     }
 
@@ -42,19 +54,21 @@ const adminLogin = async (req, res) => {
       [admin.id]
     );
 
-    // ✅ Fixed: Use consistent JWT_SECRET from environment or middleware
+    // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: admin.id,
         username: admin.username,
-        role: admin.role 
-      }, 
-      process.env.JWT_SECRET || '16e2a858ca097d0ed7e4ce727be4381b180e76642aa3b969a3f0b06313a898c10e2326cfb382d0897c43372d1072ec7a9110b5765bd677abfa05add0da7a0ce9',
-      { expiresIn: '24h' } // ✅ Add token expiration
+        role: admin.role
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
     );
 
-    // ✅ Improved response format
-    res.json({
+    console.log("✅ Login successful for user:", username);
+
+    // ✅ Improved response format with consistent structure
+    res.status(200).json({
       success: true,
       token,
       user: {
@@ -68,10 +82,11 @@ const adminLogin = async (req, res) => {
     });
     
   } catch (error) {
-    console.error("Admin login error:", error);
-    res.status(500).json({ 
+    console.error("❌ Admin login error:", error);
+    res.status(500).json({
       success: false,
-      error: "Internal server error" 
+      error: "Internal server error",
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Server error'
     });
   }
 };

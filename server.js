@@ -3600,8 +3600,7 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
 
 // Admin Intern Dashboard Page
 
-app.use('/api', adminRoutes);
-
+app.use('/api/admin', adminRoutes);
 // ============= ERROR HANDLING =============
 
 

@@ -11,23 +11,25 @@ const authenticateAdmin = async (req, res, next) => {
     const token = authHeader?.replace('Bearer ', '');
     
     if (!token) {
-      return res.status(401).json({ 
-        error: 'Access denied. No token provided.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Access denied. No token provided.'
       });
     }
 
     // Verify JWT token
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Query database using PostgreSQL syntax (not MySQL)
+    // ✅ FIXED: Use decoded.id instead of admin.id
     const result = await pool.query(
-      'SELECT * FROM admin_users WHERE id = $1 AND is_active = 1',
-      [admin.id]
+      'SELECT * FROM admin_users WHERE id = $1 AND is_active = true',
+      [decoded.id] // ✅ Fixed: was admin.id, now decoded.id
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ 
-        error: 'Invalid token or user not found.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token or user not found.'
       });
     }
 
@@ -42,16 +44,19 @@ const authenticateAdmin = async (req, res, next) => {
     
     // Handle specific JWT errors
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        error: 'Invalid token format.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token format.'
       });
     } else if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        error: 'Token has expired. Please login again.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Token has expired. Please login again.'
       });
     } else {
-      return res.status(500).json({ 
-        error: 'Authentication service error.' 
+      return res.status(500).json({
+        success: false,
+        error: 'Authentication service error.'
       });
     }
   }
@@ -61,8 +66,9 @@ const authenticateAdmin = async (req, res, next) => {
 const requireRole = (roles) => {
   return (req, res, next) => {
     if (!req.admin) {
-      return res.status(401).json({ 
-        error: 'Authentication required.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.'
       });
     }
     
@@ -70,8 +76,9 @@ const requireRole = (roles) => {
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
     
     if (!allowedRoles.includes(req.admin.role)) {
-      return res.status(403).json({ 
-        error: 'Insufficient permissions.' 
+      return res.status(403).json({
+        success: false,
+        error: 'Insufficient permissions.'
       });
     }
     

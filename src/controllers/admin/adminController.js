@@ -20,7 +20,7 @@ const adminLogin = async (req, res) => {
     
     // ✅ FIXED: Use 'true' instead of '1' for PostgreSQL boolean
     const result = await pool.query(
-      "SELECT * FROM admin_users WHERE username = $1 AND is_active = true",
+      "SELECT * FROM admin_users WHERE username = $1 AND is_active = 1",
       [username]
     );
     

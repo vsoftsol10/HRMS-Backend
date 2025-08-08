@@ -22,7 +22,7 @@ const authenticateAdmin = async (req, res, next) => {
     
     // ✅ FIXED: Use decoded.id instead of admin.id
     const result = await pool.query(
-      'SELECT * FROM admin_users WHERE id = $1 AND is_active = true',
+      'SELECT * FROM admin_users WHERE id = $1 AND is_active = 1',
       [decoded.id] // ✅ Fixed: was admin.id, now decoded.id
     );
 

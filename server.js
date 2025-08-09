@@ -13,7 +13,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const db = require('./src/config/database'); // PostgreSQL connection
-const adminRoutes = require('./src/routes/adminIntern')
+const adminRoutes = require('./src/routes/adminIntern/index')
 
 const PORT = process.env.PORT || 8080;
 const app = express();
@@ -3600,7 +3600,47 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
 
 // Admin Intern Dashboard Page
 
+
+console.log('🔧 Mounting admin routes...');
 app.use('/api/admin', adminRoutes);
+console.log('✅ Admin routes successfully mounted on /api/admin');
+
+console.log('📋 Final route listing:');
+function logRoutes(app) {
+  const routes = [];
+  
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      // Direct routes
+      const method = Object.keys(middleware.route.methods)[0].toUpperCase();
+      routes.push(`✅ ROUTE: [${method}] ${middleware.route.path}`);
+    } else if (middleware.name === 'router' && middleware.regexp) {
+      // Mounted routers
+      const routerPath = middleware.regexp.source
+        .replace('\\', '')
+        .replace('^', '')
+        .replace('\\/?(?=\\/|$)', '')
+        .replace(/[^a-zA-Z0-9\/\-_]/g, '');
+      
+      if (middleware.handle.stack) {
+        middleware.handle.stack.forEach((handler) => {
+          if (handler.route) {
+            const method = Object.keys(handler.route.methods)[0].toUpperCase();
+            const fullPath = routerPath + handler.route.path;
+            routes.push(`✅ ROUTE: [${method}] ${fullPath}`);
+          }
+        });
+      }
+    }
+  });
+  
+  // Sort routes for better readability
+  routes.sort().forEach(route => console.log(route));
+}
+
+// Call this instead of the existing route debug code
+logRoutes(app);
+
 // ============= ERROR HANDLING =============
 
 

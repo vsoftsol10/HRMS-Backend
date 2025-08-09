@@ -3602,7 +3602,7 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
 
 
 console.log('🔧 Mounting admin routes...');
-app.use('/api/admin', adminRoutes);
+app.use('/api', adminRoutes);
 console.log('✅ Admin routes successfully mounted on /api/admin');
 
 console.log('📋 Final route listing:');

@@ -4,7 +4,7 @@ const pool = require('../../config/database');
 const getResources = async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM learning_resources WHERE is_active = true ORDER BY created_at DESC'
+      'SELECT * FROM learning_resources WHERE is_active = 1 ORDER BY created_at DESC'
     );
     
     res.json(result.rows);

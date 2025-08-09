@@ -38,32 +38,32 @@ const upload = multer({ storage });
 router.post('/login', adminController.adminLogin);
 
 // ✅ FIXED: Dashboard Routes (remove /admin prefix since it's already in the mount path)
-router.get('/dashboard/stats', authenticateAdmin, dashboardController.getDashboardStats);
-router.get('/dashboard/activities', authenticateAdmin, dashboardController.getRecentActivities);
+router.get('admin/dashboard/stats', authenticateAdmin, dashboardController.getDashboardStats);
+router.get('admin/dashboard/activities', authenticateAdmin, dashboardController.getRecentActivities);
 
 // ✅ FIXED: Intern Management Routes  
-router.get('/interns', authenticateAdmin, internsController.getInterns);
-router.put('/interns/:id/status', authenticateAdmin, internsController.updateInternStatus);
-router.put('/interns/:id/progress', authenticateAdmin, internsController.updateInternProgress);
+router.get('admin/interns', authenticateAdmin, internsController.getInterns);
+router.put('admin/interns/:id/status', authenticateAdmin, internsController.updateInternStatus);
+router.put('admin/interns/:id/progress', authenticateAdmin, internsController.updateInternProgress);
 
 // ✅ FIXED: Tasks Management Routes
-router.get('/tasks', authenticateAdmin, tasksController.getTasks);
-router.post('/tasks', authenticateAdmin, tasksController.createTask);
-router.put('/tasks/:id', authenticateAdmin, tasksController.updateTask);
+router.get('admin/tasks', authenticateAdmin, tasksController.getTasks);
+router.post('admin/tasks', authenticateAdmin, tasksController.createTask);
+router.put('admin/tasks/:id', authenticateAdmin, tasksController.updateTask);
 
 // ✅ FIXED: Learning Resources Routes
-router.get('/resources', authenticateAdmin, resourcesController.getResources);
-router.post('/resources', authenticateAdmin, upload.single('file'), resourcesController.uploadResource);
+router.get('admin/resources', authenticateAdmin, resourcesController.getResources);
+router.post('admin/resources', authenticateAdmin, upload.single('file'), resourcesController.uploadResource);
 
 // ✅ FIXED: Attendance Routes
-router.get('/attendance', authenticateAdmin, attendanceController.getAttendance);
-router.post('/attendance', authenticateAdmin, attendanceController.markAttendance);
+router.get('admin/attendance', authenticateAdmin, attendanceController.getAttendance);
+router.post('admin/attendance', authenticateAdmin, attendanceController.markAttendance);
 
 // ✅ FIXED: Certificate Routes
-router.get('/certificates', authenticateAdmin, certificatesController.getCertificates);
-router.put('/certificates/:id/approve', authenticateAdmin, certificatesController.approveCertificate);
+router.get('admin/certificates', authenticateAdmin, certificatesController.getCertificates);
+router.put('admin/certificates/:id/approve', authenticateAdmin, certificatesController.approveCertificate);
 
 // ✅ FIXED: Batches Routes
-router.get('/batches', authenticateAdmin, batchesController.getBatches);
+router.get('admin/batches', authenticateAdmin, batchesController.getBatches);
 
 module.exports = router;

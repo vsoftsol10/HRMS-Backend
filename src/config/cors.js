@@ -1,16 +1,32 @@
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://portal.thevsoft.com'
+];
+
 const corsOptions = {
-  origin: [
-    'https://hrms-backend-5wau.onrender.com',
-    'http://localhost:3000',
-    'https://portal.thevsoft.com',
-    'http://localhost:5173',
-    'https://localhost:5173',
-  ],
+  origin: (origin, callback) => {
+    console.log('🌍 CORS Check - Request from origin:', origin);
+    
+    if (!origin) {
+      console.log('✅ CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('✅ CORS: Origin allowed:', origin);
+      callback(null, true);
+    } else {
+      console.log('❌ CORS: Origin blocked:', origin);
+      console.log('❌ CORS: Allowed origins are:', allowedOrigins);
+      callback(new Error(`CORS: Origin ${origin} not allowed`));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Origin',
-    'X-Requested-With',
+    'X-Requested-With', 
     'Content-Type',
     'Accept',
     'Authorization',
@@ -18,5 +34,6 @@ const corsOptions = {
     'X-Access-Token'
   ],
   optionsSuccessStatus: 200
-}
-module.exports = { corsOptions };
+};
+
+module.exports = { corsOptions, allowedOrigins };

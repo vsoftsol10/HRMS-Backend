@@ -3,17 +3,14 @@ const { Pool } = require('pg');
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
-const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
 const { body, validationResult } = require("express-validator");
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const db = require('./src/config/database'); // PostgreSQL connection
-const adminRoutes = require('./src/routes/adminIntern/index')
+const adminRoutes = require('./src/routes/adminIntern/index');
+const multer = require('multer');
+
 
 const PORT = process.env.PORT || 8080;
 const app = express();
@@ -1794,8 +1791,6 @@ async function initializeGeofencingTables() {
   }
 }
 
-// Call this after your existing initialization
-// initializeGeofencingTables();
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -2576,46 +2571,10 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-// Rate limiting
-const isDev = process.env.NODE_ENV !== "production";
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 1000 : 15, // loosen in dev
-  message: {
-    error: "Too many authentication attempts, please try again later.",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const generalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isDev ? 5000 : 100,
-  message: {
-    error: "Too many requests from this IP, please try again later.",
-  },
-});
 
 
-app.use("/api/auth", authLimiter);
-app.use("/api", generalLimiter);
 
-// Email configuration
-const emailTransporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
 
-// Utility functions
-const generateToken = () => {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
-};
 
 const generateJWT = (payload) => {
   return jwt.sign(payload, process.env.JWT_SECRET || "your-secret-key", {
@@ -2623,20 +2582,7 @@ const generateJWT = (payload) => {
   });
 };
 
-const sendEmail = async (to, subject, html) => {
-  try {
-    await emailTransporter.sendMail({
-      from: process.env.FROM_EMAIL || "noreply@internportal.com",
-      to,
-      subject,
-      html,
-    });
-    return true;
-  } catch (error) {
-    console.error("Email sending failed:", error);
-    return false;
-  }
-};
+
 
 // Validation middleware
 const validateSignUp = [

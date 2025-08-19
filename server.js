@@ -19,6 +19,11 @@ const app = express();
 app.set('trust proxy', 1);
 
 
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://portal.thevsoft.com'
+];
 
 // 🔥 SIMPLIFIED CORS Configuration - sometimes complex configs fail
 const corsOptions = {

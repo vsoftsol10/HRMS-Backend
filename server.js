@@ -10,6 +10,7 @@ const { body, validationResult } = require("express-validator");
 const db = require('./src/config/database'); // PostgreSQL connection
 const adminRoutes = require('./src/routes/adminIntern/index');
 const multer = require('multer');
+const nodemailer = require('nodemailer');
 
 
 const PORT = process.env.PORT || 8080;
@@ -2595,20 +2596,73 @@ const generateJWT = (payload) => {
   });
 };
 
+const emailTransporter = nodemailer.createTransport({
+  // For Gmail (recommended for testing)
+  // service: 'gmail',
+  // auth: {
+  //   user: process.env.EMAIL_USER, // Your Gmail address
+  //   pass: process.env.EMAIL_APP_PASSWORD, // Gmail App Password (not regular password)
+  // },
+  
+  // Alternative: For custom SMTP server
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: false, // true for 465, false for 587
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Verify email configuration on startup
+emailTransporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ Email transporter verification failed:', error);
+    console.log('📧 Email features will not work. Please check your email configuration.');
+  } else {
+    console.log('✅ Email transporter is ready to send emails');
+  }
+});
+
+// Fixed sendEmail function
 const sendEmail = async (to, subject, html) => {
   try {
-    await emailTransporter.sendMail({
-      from: process.env.FROM_EMAIL || "noreply@internportal.com",
-      to,
-      subject,
-      html,
+    console.log('📧 Attempting to send email to:', to);
+    console.log('📧 Email subject:', subject);
+    
+    const mailOptions = {
+      from: `"Intern Portal" <${process.env.EMAIL_USER}>`,
+      to: to,
+      subject: subject,
+      html: html,
+    };
+    
+    console.log('📧 Mail options configured:', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject
     });
-    return true;
+    
+    const result = await emailTransporter.sendMail(mailOptions);
+    
+    console.log('✅ Email sent successfully:', {
+      messageId: result.messageId,
+      accepted: result.accepted,
+      rejected: result.rejected
+    });
+    
+    return { success: true, messageId: result.messageId };
   } catch (error) {
-    console.error("Email sending failed:", error);
-    return false;
+    console.error('❌ Email sending failed:', error);
+    console.error('Error details:', {
+      code: error.code,
+      command: error.command,
+      response: error.response
+    });
+    return { success: false, error: error.message };
   }
 };
+
 
 
 // Validation middleware
@@ -2664,7 +2718,7 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     const { email, password, fullName } = req.body;
     console.log("✅ Validation passed for:", { email, fullName });
 
-    // ✅ Check if user already exists by email only
+    // Check if user already exists
     console.log("🔍 Checking if user exists...");
     const existingUsers = await client.query(
       "SELECT id FROM interns WHERE email = $1",
@@ -2680,21 +2734,19 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
 
     console.log("✅ User doesn't exist, proceeding...");
 
-    // ✅ Hash password
+    // Hash password
     console.log("🔐 Hashing password...");
     const saltRounds = 12;
     const passwordHash = await bcrypt.hash(password, saltRounds);
     console.log("✅ Password hashed successfully");
 
-    // ✅ Generate verification token
+    // Generate verification token
     console.log("🎫 Generating verification token...");
     const verificationToken = generateToken();
     console.log("✅ Token generated:", verificationToken ? "Yes" : "No");
 
-    // ✅ Insert new user
+    // Insert new user
     console.log("💾 Inserting user into database...");
-    console.log("📊 Insert query parameters:", [fullName, email, "password_hash", verificationToken]);
-    
     const result = await client.query(
       `INSERT INTO interns (full_name, email, password_hash, verification_token) 
        VALUES ($1, $2, $3, $4) RETURNING id`,
@@ -2703,82 +2755,143 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
 
     console.log("✅ User inserted successfully, ID:", result.rows[0].id);
 
-    // ✅ Send verification email
-    console.log("📧 Sending verification email...");
+    // Send verification email
+    console.log("📧 Preparing to send verification email...");
     const verificationLink = `${
       process.env.FRONTEND_URL || "https://portal.thevsoft.com"
     }/verify-email?token=${verificationToken}`;
     
-    const emailSent = await sendEmail(
+    console.log("🔗 Verification link generated:", verificationLink);
+    
+    // Enhanced email template
+    const emailHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Verify Your Email - Intern Portal</title>
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #007bff; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+            .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
+            .button { display: inline-block; background: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+            .footer { margin-top: 20px; font-size: 12px; color: #666; text-align: center; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎉 Welcome to Intern Portal!</h1>
+            </div>
+            <div class="content">
+                <h2>Hi ${fullName},</h2>
+                <p>Thank you for registering with Intern Portal! We're excited to have you join our community.</p>
+                
+                <p>To complete your registration, please verify your email address by clicking the button below:</p>
+                
+                <div style="text-align: center;">
+                    <a href="${verificationLink}" class="button">✅ Verify My Email</a>
+                </div>
+                
+                <p>If the button above doesn't work, you can copy and paste this link into your browser:</p>
+                <p style="background: #eee; padding: 10px; border-radius: 5px; word-break: break-all;">
+                    ${verificationLink}
+                </p>
+                
+                <p><strong>Important:</strong> This verification link will expire in 24 hours for security reasons.</p>
+                
+                <p>If you didn't create an account with us, please ignore this email.</p>
+                
+                <hr>
+                <p>Best regards,<br>The Intern Portal Team</p>
+            </div>
+            <div class="footer">
+                <p>This is an automated email. Please do not reply to this email address.</p>
+                <p>© 2025 Intern Portal. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    `;
+    
+    console.log("📧 Sending verification email to:", email);
+    const emailResult = await sendEmail(
       email,
-      "Verify Your Intern Portal Account",
-      `
-        <h2>Welcome to Intern Portal!</h2>
-        <p>Hi ${fullName},</p>
-        <p>Thank you for registering. Please click the link below to verify your email address:</p>
-        <a href="${verificationLink}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
-          Verify Email
-        </a>
-        <p>If the button doesn't work, copy and paste this link: ${verificationLink}</p>
-        <p>This link will expire in 24 hours.</p>
-      `
+      "🎉 Verify Your Intern Portal Account - Action Required",
+      emailHTML
     );
 
-    console.log("📧 Email sent:", emailSent ? "Success" : "Failed");
+    console.log("📧 Email sending result:", emailResult);
 
-    res.status(201).json({
-      message: "Account created successfully! Please check your email for verification.",
-      userId: result.rows[0].id,
-      emailSent,
-    });
+    // Response based on email success
+    if (emailResult.success) {
+      res.status(201).json({
+        success: true,
+        message: "Account created successfully! Please check your email for verification instructions.",
+        userId: result.rows[0].id,
+        emailSent: true,
+        verificationRequired: true,
+        instructions: "Check your inbox (and spam folder) for the verification email."
+      });
+    } else {
+      res.status(201).json({
+        success: true,
+        message: "Account created successfully, but verification email failed to send. Please request a new verification email.",
+        userId: result.rows[0].id,
+        emailSent: false,
+        verificationRequired: true,
+        emailError: emailResult.error,
+        action: "Please use the 'Resend Verification Email' option on the login page."
+      });
+    }
 
   } catch (error) {
-    console.error("💥 Sign up error:", error);
-    console.error("📊 Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-      detail: error.detail,
-      hint: error.hint,
-      position: error.position,
-      internalPosition: error.internalPosition,
-      internalQuery: error.internalQuery,
-      where: error.where,
-      schema: error.schema,
-      table: error.table,
-      column: error.column,
-      dataType: error.dataType,
-      constraint: error.constraint,
-    });
-    
-    // More specific error responses
-    if (error.code === '42P01') {
-      return res.status(500).json({ 
-        error: "Database table 'interns' does not exist",
-        details: "Please ensure the database schema is properly set up"
-      });
-    }
-    
-    if (error.code === '42703') {
-      return res.status(500).json({ 
-        error: "Database column does not exist",
-        details: "Please check the table schema matches the query"
-      });
-    }
-    
-    if (error.code === '23505') {
-      return res.status(409).json({ 
-        error: "User with this email already exists"
-      });
-    }
-    
+    console.error("💥 Registration error:", error);
     res.status(500).json({ 
       error: "Internal server error during registration",
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   } finally {
     client.release();
+  }
+});
+
+app.post('/api/test-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required' });
+    }
+    
+    console.log('🧪 Testing email to:', email);
+    
+    const testHTML = `
+      <h2>🧪 Email Test Successful!</h2>
+      <p>If you received this email, your email configuration is working correctly.</p>
+      <p>Timestamp: ${new Date().toISOString()}</p>
+    `;
+    
+    const result = await sendEmail(
+      email,
+      '🧪 Intern Portal - Email Configuration Test',
+      testHTML
+    );
+    
+    res.json({
+      success: result.success,
+      message: result.success ? 'Test email sent successfully!' : 'Test email failed to send',
+      details: result
+    });
+  } catch (error) {
+    console.error('❌ Email test error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Email test failed',
+      details: error.message
+    });
   }
 });
 

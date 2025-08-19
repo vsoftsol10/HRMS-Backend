@@ -85,6 +85,8 @@ app.use('/api/', apiLimiter);
 // ✅ Single console.log statement
 console.log("✅ CORS middleware initialized with allowed origins:", allowedOrigins);
 
+
+
 // Middleware to verify JWT
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers["authorization"];
@@ -2572,9 +2574,9 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 
 
-
-
-
+const generateToken = () => {
+  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+};
 
 const generateJWT = (payload) => {
   return jwt.sign(payload, process.env.JWT_SECRET || "your-secret-key", {
@@ -2582,6 +2584,20 @@ const generateJWT = (payload) => {
   });
 };
 
+const sendEmail = async (to, subject, html) => {
+  try {
+    await emailTransporter.sendMail({
+      from: process.env.FROM_EMAIL || "noreply@internportal.com",
+      to,
+      subject,
+      html,
+    });
+    return true;
+  } catch (error) {
+    console.error("Email sending failed:", error);
+    return false;
+  }
+};
 
 
 // Validation middleware
@@ -2618,11 +2634,16 @@ const validateSignIn = [
 // Routes
 
 // 1. Sign Up Route
+// Enhanced Sign Up Route with detailed error logging
 app.post("/api/auth/register", validateSignUp, async (req, res) => {
   const client = await db.connect();
   try {
+    console.log("🚀 Registration attempt started");
+    console.log("📝 Request body:", req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log("❌ Validation errors:", errors.array());
       return res.status(400).json({
         error: "Validation failed",
         details: errors.array(),
@@ -2630,36 +2651,53 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
     }
 
     const { email, password, fullName } = req.body;
+    console.log("✅ Validation passed for:", { email, fullName });
 
     // ✅ Check if user already exists by email only
+    console.log("🔍 Checking if user exists...");
     const existingUsers = await client.query(
       "SELECT id FROM interns WHERE email = $1",
       [email]
     );
+    
     if (existingUsers.rows.length > 0) {
+      console.log("❌ User already exists:", email);
       return res.status(409).json({
         error: "User with this email already exists",
       });
     }
 
+    console.log("✅ User doesn't exist, proceeding...");
+
     // ✅ Hash password
+    console.log("🔐 Hashing password...");
     const saltRounds = 12;
     const passwordHash = await bcrypt.hash(password, saltRounds);
+    console.log("✅ Password hashed successfully");
 
     // ✅ Generate verification token
+    console.log("🎫 Generating verification token...");
     const verificationToken = generateToken();
+    console.log("✅ Token generated:", verificationToken ? "Yes" : "No");
 
     // ✅ Insert new user
+    console.log("💾 Inserting user into database...");
+    console.log("📊 Insert query parameters:", [fullName, email, "password_hash", verificationToken]);
+    
     const result = await client.query(
       `INSERT INTO interns (full_name, email, password_hash, verification_token) 
        VALUES ($1, $2, $3, $4) RETURNING id`,
       [fullName, email, passwordHash, verificationToken]
     );
 
+    console.log("✅ User inserted successfully, ID:", result.rows[0].id);
+
     // ✅ Send verification email
+    console.log("📧 Sending verification email...");
     const verificationLink = `${
       process.env.FRONTEND_URL || "https://portal.thevsoft.com"
     }/verify-email?token=${verificationToken}`;
+    
     const emailSent = await sendEmail(
       email,
       "Verify Your Intern Portal Account",
@@ -2675,17 +2713,59 @@ app.post("/api/auth/register", validateSignUp, async (req, res) => {
       `
     );
 
+    console.log("📧 Email sent:", emailSent ? "Success" : "Failed");
+
     res.status(201).json({
-      message:
-        "Account created successfully! Please check your email for verification.",
+      message: "Account created successfully! Please check your email for verification.",
       userId: result.rows[0].id,
       emailSent,
     });
+
   } catch (error) {
-    console.error("Sign up error:", error);
-    res
-      .status(500)
-      .json({ error: "Internal server error during registration" });
+    console.error("💥 Sign up error:", error);
+    console.error("📊 Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      detail: error.detail,
+      hint: error.hint,
+      position: error.position,
+      internalPosition: error.internalPosition,
+      internalQuery: error.internalQuery,
+      where: error.where,
+      schema: error.schema,
+      table: error.table,
+      column: error.column,
+      dataType: error.dataType,
+      constraint: error.constraint,
+    });
+    
+    // More specific error responses
+    if (error.code === '42P01') {
+      return res.status(500).json({ 
+        error: "Database table 'interns' does not exist",
+        details: "Please ensure the database schema is properly set up"
+      });
+    }
+    
+    if (error.code === '42703') {
+      return res.status(500).json({ 
+        error: "Database column does not exist",
+        details: "Please check the table schema matches the query"
+      });
+    }
+    
+    if (error.code === '23505') {
+      return res.status(409).json({ 
+        error: "User with this email already exists"
+      });
+    }
+    
+    res.status(500).json({ 
+      error: "Internal server error during registration",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   } finally {
     client.release();
   }

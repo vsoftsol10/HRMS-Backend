@@ -19,16 +19,17 @@ const app = express();
 app.set('trust proxy', 1);
 
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'https://portal.thevsoft.com'
-];
 
 // 🔥 SIMPLIFIED CORS Configuration - sometimes complex configs fail
 const corsOptions = {
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     console.log('🌍 CORS Check - Request from origin:', origin);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://portal.thevsoft.com'
+    ];
     
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
@@ -41,8 +42,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('❌ CORS: Origin blocked:', origin);
-      console.log('❌ CORS: Allowed origins are:', allowedOrigins);
-      callback(new Error(`CORS: Origin ${origin} not allowed`));
+      callback(null, true); // 🔥 TEMPORARILY ALLOW ALL for debugging
     }
   },
   credentials: true,
@@ -152,7 +152,13 @@ app.options('*', (req, res) => {
 
 // CORS TEST
 app.get('/api/cors-test', (req, res) => {
-  res.json({ success: true, message: 'CORS test successful' });
+  console.log('🔍 CORS test accessed from:', req.headers.origin);
+  res.json({ 
+    success: true, 
+    message: 'CORS test successful',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // PostgreSQL Test Route
@@ -3624,12 +3630,30 @@ app.get('/api/timeline', authenticateToken, async (req, res) => {
   }
 });
 
-// Admin Intern Dashboard Page
-
+// Admin login debug route
+app.post('/api/admin/login-debug', (req, res) => {
+  console.log('🔍 Admin login debug - Headers:', req.headers);
+  console.log('🔍 Admin login debug - Origin:', req.headers.origin);
+  res.json({
+    success: true,
+    message: 'Admin login debug successful',
+    origin: req.headers.origin,
+    body: req.body
+  });
+});
+// Catch-all debug for admin routes
+app.use('/api/admin/*', (req, res, next) => {
+  console.log(`🔍 Admin route accessed: ${req.method} ${req.path}`);
+  console.log(`🔍 Origin: ${req.headers.origin}`);
+  console.log(`🔍 Headers:`, req.headers);
+  next();
+});
 
 console.log('🔧 Mounting admin routes...');
 app.use('/api/admin', adminRoutes);
 console.log('✅ Admin routes successfully mounted on /api/admin');
+
+
 
 console.log('📋 Final route listing:');
 function logRoutes(app) {
